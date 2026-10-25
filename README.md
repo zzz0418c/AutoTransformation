@@ -27,7 +27,7 @@
 
 ## 第一次使用：你要做的
 
-1. **填配置**：把 `.env.example` 复制成 `.env`，填入文本模型 Key；图片转录还需要一个支持图片输入的视觉模型（可以同一家，也可以分开）。
+1. **填配置**：把 `.env.example` 复制成 `.env`，填入模型 Key。推荐 DeepSeek Flash：一个 Key、一个模型同时管文字和图片。
 2. **启动**：`npm start`，打开 <http://127.0.0.1:8787>。
 3. **读一页**：上传书页 → 校对识别结果 → 翻译。
 4. **收词**：点几个你想记的词；右侧「生词本」里改标题、选「下次复习日期」。
@@ -81,12 +81,13 @@ npm start
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `LLM_API_KEY` | 空 | 文本模型 Key。为空则进入演示模式 |
-| `LLM_BASE_URL` | `https://api.deepseek.com/v1` | 文本模型接口地址 |
-| `LLM_MODEL` | `deepseek-chat` | 文本模型名 |
+| `LLM_API_KEY` | 空 | 模型 Key。为空则进入演示模式 |
+| `LLM_BASE_URL` | `https://api.deepseek.com` | 接口地址 |
+| `LLM_MODEL` | `deepseek-flash` | 文本模型名 |
+| `LLM_THINKING` | `auto` | `auto` = DeepSeek 关闭思考模式；其他服务商忽略 |
 | `VISION_API_KEY` | 复用 `LLM_API_KEY` | 视觉模型 Key |
 | `VISION_BASE_URL` | 复用 `LLM_BASE_URL` | 视觉模型接口地址 |
-| `VISION_MODEL` | 复用 `LLM_MODEL` | 视觉模型名，**必须支持图片输入** |
+| `VISION_MODEL` | 复用 `LLM_MODEL` | 视觉模型名；留空即复用 |
 | `BOOK_CONTEXT` | `19 世纪英国小说` | 写进提示词的书籍背景，也可在页面上临时改 |
 | `DATA_DIR` | `data` | 生词本存放目录，已被 `.gitignore` 忽略 |
 | `TIMEZONE` | `Asia/Shanghai` | 复习日期与提醒使用的时区 |
@@ -99,23 +100,56 @@ npm start
 | `MAX_UPLOAD_MB` | `12` | 图片大小上限 |
 | `LLM_MOCK` | `0` | 设为 `1` 强制演示模式 |
 
-### 例 A：文本用 DeepSeek，图片用另一家视觉模型
+### 模型怎么选（性价比）
 
-DeepSeek 的文本接口便宜、中文稳，但不一定提供图片输入；这时把视觉部分单独指到别家：
+按 **每天 5 页 + 20 次点词** 估算，一个月大约 0.5M 输入 / 0.36M 输出 tokens：
+
+| 方案 | 文本 | 图片 | 大致成本 |
+|---|---|---|---|
+| **一把梭（推荐）** | `deepseek-flash` | `deepseek-flash` | 非高峰约 $0.3/月，高峰约 $0.6/月 |
+| 译文更讲究 | `deepseek-v4-pro` | `deepseek-flash` | 非高峰约 $0.8–1.5/月 |
+| 零成本试水 | `GLM-4.7-Flash` | `GLM-4.6V-Flash` | 免费，但有速率限制 |
+
+- **DeepSeek Flash** 同时支持文字和图片，一个 Key 就能跑完 OCR + 翻译 + 点词；中文和英文书页都够用。
+- 它的图片会压到约 1300×1300、**单图最多 1024 tokens**，成本很可控。
+- DeepSeek 高峰时段是北京时间工作日 09:00–12:00、14:00–18:00，价格翻倍；晚上和周末是半价。
+- 翻译追求更好的文学性时，把文本换成 `deepseek-v4-pro`（同一个 Key、同一个地址），图片仍用 `deepseek-flash`。
+- 价格以官方页为准：[DeepSeek 价格](https://api-docs.deepseek.com/quick_start/pricing) · [Z.AI 价格](https://docs.z.ai/guides/overview/pricing)。
+
+### 例 A：最省事，DeepSeek Flash 一把梭（推荐）
 
 ```dotenv
 LLM_API_KEY=sk-你的DeepSeekKey
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-chat
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-flash
+LLM_THINKING=auto
 
+# VISION_* 全部留空：图片也走 deepseek-flash
+```
+
+DeepSeek Flash 的图片输入是标准 OpenAI `image_url` 格式，本项目已经按这个格式发送。
+
+### 例 B：翻译更讲究，文本用 Pro，图片用 Flash
+
+```dotenv
+LLM_API_KEY=sk-你的DeepSeekKey
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-pro
+LLM_THINKING=auto
+
+VISION_MODEL=deepseek-flash
+# VISION_API_KEY / VISION_BASE_URL 留空，自动复用上面的
+```
+
+### 例 C：视觉用别家的模型
+
+文本仍用 DeepSeek，图片单独指到别家：
+
+```dotenv
 VISION_API_KEY=你的视觉模型Key
 VISION_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 VISION_MODEL=你账号里可用的视觉模型
 ```
-
-### 例 B：一个服务全包
-
-如果同一家同时提供文本和视觉模型，只填 `LLM_*`，并把 `LLM_MODEL` 设成支持图片的模型即可（`VISION_*` 留空会自动复用）。
 
 ### 提醒配置
 
@@ -264,7 +298,7 @@ data/             生词本与通知日志（运行时生成，已 gitignore）
 npm test
 ```
 
-28 项测试覆盖：分段/硬换行合并、JSON 提取、分词偏移、缩写句界；生词本增删改查、按词去重、持久化；时区换算、ICS 生成、到期筛选、推送格式；以及 OCR / 翻译 / 点词 / 生词本 / 导出接口的成功与失败路径。CI 在 GitHub Actions 上跑同一套测试。
+31 项测试覆盖：分段/硬换行合并、JSON 提取、分词偏移、缩写句界；生词本增删改查、按词去重、持久化；时区换算、ICS 生成、到期筛选、推送格式；模型请求体与思考模式开关；以及 OCR / 翻译 / 点词 / 生词本 / 导出接口的成功与失败路径。CI 在 GitHub Actions 上跑同一套测试。
 
 ## 隐私
 

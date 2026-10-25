@@ -104,6 +104,26 @@ function normalizeSense(raw, fallbackWord) {
   };
 }
 
+/**
+ * DeepSeek enables thinking mode by default, which is wasted latency and money
+ * for OCR, translation, and short dictionary answers. Other providers do not
+ * understand this field, so it is only attached for DeepSeek endpoints.
+ */
+export function buildRequestBody({ provider, messages, temperature, maxTokens, thinking = 'auto' }) {
+  const body = {
+    model: provider.model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+  };
+
+  if (String(provider.baseUrl).toLowerCase().includes('deepseek.com')) {
+    body.thinking = { type: thinking === 'enabled' ? 'enabled' : 'disabled' };
+  }
+
+  return body;
+}
+
 function createMockLlm() {
   return {
     demo: true,
@@ -153,12 +173,15 @@ function createRemoteLlm(config) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${provider.key}`,
         },
-        body: JSON.stringify({
-          model: provider.model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-        }),
+        body: JSON.stringify(
+          buildRequestBody({
+            provider,
+            messages,
+            temperature,
+            maxTokens,
+            thinking: config.thinking,
+          }),
+        ),
         signal: AbortSignal.timeout(config.timeoutMs),
       });
     } catch (error) {

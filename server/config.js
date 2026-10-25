@@ -40,8 +40,9 @@ export function loadConfig(env = process.env) {
   loadDotEnv();
 
   const textKey = text(env.LLM_API_KEY, '');
-  const textBaseUrl = withoutTrailingSlash(text(env.LLM_BASE_URL, 'https://api.deepseek.com/v1'));
-  const textModel = text(env.LLM_MODEL, 'deepseek-chat');
+  const textBaseUrl = withoutTrailingSlash(text(env.LLM_BASE_URL, 'https://api.deepseek.com'));
+  const textModel = text(env.LLM_MODEL, 'deepseek-flash');
+  const thinking = text(env.LLM_THINKING, 'auto').toLowerCase();
 
   const demo = truthy(env.LLM_MOCK) || !textKey;
   const dataDir = text(env.DATA_DIR, 'data');
@@ -54,6 +55,7 @@ export function loadConfig(env = process.env) {
     timeoutMs: Number(env.LLM_TIMEOUT_MS) || 90_000,
     maxUploadMb: Number(env.MAX_UPLOAD_MB) || 12,
     bookContext: text(env.BOOK_CONTEXT, '19 世纪英国小说'),
+    thinking: ['auto', 'enabled', 'disabled'].includes(thinking) ? thinking : 'auto',
     dataDir: isAbsolute(dataDir) ? dataDir : resolve(projectRoot, dataDir),
     timeZone: text(env.TIMEZONE, 'Asia/Shanghai'),
     remindAt: /^\d{2}:\d{2}$/.test(remindAt) ? remindAt : '07:30',
