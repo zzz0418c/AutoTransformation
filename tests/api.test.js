@@ -212,6 +212,26 @@ test('malformed JSON gets a clear 400 instead of a generic 500', async () => {
   });
 });
 
+test('PWA manifest, service worker, and icons are served', async () => {
+  await withServer(fakeLlm(), async (base) => {
+    const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
+    assert.equal(manifestResponse.status, 200);
+    assert.match(manifestResponse.headers.get('content-type') ?? '', /manifest\+json|json/);
+
+    const manifest = await manifestResponse.json();
+    assert.equal(manifest.name, 'AutoTransformation');
+    assert.ok(manifest.icons.length >= 2);
+
+    const serviceWorker = await fetch(`${base}/sw.js`);
+    assert.equal(serviceWorker.status, 200);
+    assert.match(serviceWorker.headers.get('content-type') ?? '', /javascript/);
+
+    const icon = await fetch(`${base}/icons/icon-192.png`);
+    assert.equal(icon.status, 200);
+    assert.match(icon.headers.get('content-type') ?? '', /image\/png/);
+  });
+});
+
 test('unknown API routes return JSON 404', async () => {
   await withServer(fakeLlm(), async (base) => {
     const { status, body } = await asJson(await fetch(`${base}/api/nope`));

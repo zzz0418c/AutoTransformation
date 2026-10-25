@@ -275,6 +275,11 @@ export function createApp({ config, llm, store, publicDir = defaultPublicDir }) 
     );
   });
 
+  app.get('/manifest.webmanifest', (req, res) => {
+    res.type('application/manifest+json');
+    res.sendFile(path.join(publicDir, 'manifest.webmanifest'));
+  });
+
   app.get('/api/notebooks/:id/export.ics', (req, res) => {
     const notebook = requireNotebook(req.params.id);
     const ics = buildIcs([notebook], {

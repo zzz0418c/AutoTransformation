@@ -75,6 +75,26 @@ npm start
 
 然后打开 <http://127.0.0.1:8787>。
 
+## 装成桌面 App（不用 Electron）
+
+Windows 上执行一次：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-desktop-app.ps1
+```
+
+桌面和开始菜单会出现 **AutoTransformation**。双击后：
+
+1. 后台检查本地服务，没启动就以隐藏窗口拉起；
+2. 用 Edge / Chrome 的 `--app` 模式打开，只有内容区，没有地址栏和标签页。
+
+没有 Electron、Tauri，也没有额外的 exe——本质是「桌面快捷方式 + 隐藏的 Node 服务 + 浏览器 App 窗口」，所以不用构建、不用安装运行时。
+
+- 第一次启动约 1–3 秒；之后服务已在跑，打开很快。
+- 停止后台服务：`powershell -ExecutionPolicy Bypass -File scripts\stop-app.ps1`
+- 也可以直接浏览器安装：用 Edge 打开页面 → 「安装此站点为应用」。`manifest.webmanifest` 和 service worker 已经准备好；PWA 仍然需要本地服务在跑。
+- 移动了项目目录，重新执行一次安装脚本即可（快捷方式里是绝对路径）。
+
 ## 配置
 
 文本模型负责翻译和词义，视觉模型负责图片转录；两者都走 OpenAI 兼容的 `/chat/completions`。
@@ -283,11 +303,17 @@ public/
   index.html      三步式界面 + 生词本抽屉
   app.js          上传、翻译、点词、生词本、提醒
   styles.css      纸张质感排版
+  manifest.webmanifest  PWA 清单
+  sw.js           App Shell 缓存（API 始终走网络）
+  icons/          PWA / 快捷方式图标
   js/text.js      分词与句子边界（前端和测试共用）
   js/sample.js    示例段落
 scripts/
   notify.mjs      到期提醒推送
-  install-reminder.ps1  Windows 每日计划任务
+  launch-app.ps1  启动隐藏服务 + 打开 App 窗口
+  install-desktop-app.ps1  创建桌面 / 开始菜单快捷方式
+  stop-app.ps1    停止后台服务
+  install-reminder.ps1  Windows 每日提醒任务
 tests/            node:test 单元测试与接口测试
 data/             生词本与通知日志（运行时生成，已 gitignore）
 ```
@@ -298,7 +324,7 @@ data/             生词本与通知日志（运行时生成，已 gitignore）
 npm test
 ```
 
-31 项测试覆盖：分段/硬换行合并、JSON 提取、分词偏移、缩写句界；生词本增删改查、按词去重、持久化；时区换算、ICS 生成、到期筛选、推送格式；模型请求体与思考模式开关；以及 OCR / 翻译 / 点词 / 生词本 / 导出接口的成功与失败路径。CI 在 GitHub Actions 上跑同一套测试。
+32 项测试覆盖：分段/硬换行合并、JSON 提取、分词偏移、缩写句界；生词本增删改查、按词去重、持久化；时区换算、ICS 生成、到期筛选、推送格式；模型请求体与思考模式开关；PWA 清单 / Service Worker；以及 OCR / 翻译 / 点词 / 生词本 / 导出接口的成功与失败路径。CI 在 GitHub Actions 上跑同一套测试。
 
 ## 隐私
 
@@ -307,9 +333,13 @@ npm test
 - 生词本只存在本机 `data/notebooks.json`，已加入 `.gitignore`；不会上传 GitHub。
 - 只有在你配置 `PUSH_URL` 后，到期摘要（标题 + 词数）才会发到你自己的 webhook。
 - API Key 只存在 `.env`，接口不会把 Key 返回给前端。
+- Service Worker 只缓存界面静态文件（HTML/CSS/JS/图标），`/api/` 请求不缓存，也不落盘。
 
 ## 已知限制
 
+- 网页版需要 Node 服务在跑；桌面快捷方式会自动拉起，但关掉服务后 App 窗口里的识别/翻译会失败。
+- 桌面 App 依赖 Edge 或 Chrome；两者都没有时会退回默认浏览器的标签页。
+- 快捷方式里记录的是绝对路径，移动项目目录后需要重新执行一次安装脚本。
 - 花体、手写、严重倾斜、两页跨页的照片识别率会明显下降；识别结果需要你校对。
 - 词义由大模型生成，偶发不准确；同一词在不同句子里结果可能不同，这是刻意的（语境优先）。
 - 每篇只有一个下次复习日期，不按词追踪掌握度；需要固定曲线就用 vocabcurve。

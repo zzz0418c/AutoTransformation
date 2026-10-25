@@ -1,0 +1,41 @@
+{
+  "id": "/",
+  "name": "AutoTransformation",
+  "short_name": "AutoTransformation",
+  "description": "上传书页照片，逐段翻译，点词看语境义与常用义，并生成每篇生词本。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#f7f3ea",
+  "theme_color": "#221f1a",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "读一页示例",
+      "short_name": "示例",
+      "url": "/?sample=1"
+    }
+  ]
+}
