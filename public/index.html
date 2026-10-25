@@ -23,6 +23,14 @@
   </header>
 
   <main id="main">
+    <div id="due-banner" class="due-banner" hidden>
+      <div class="due-copy">
+        <strong id="due-title"></strong>
+        <span id="due-text"></span>
+      </div>
+      <button id="due-open" type="button" class="primary small">查看</button>
+    </div>
+
     <section id="step-upload" class="step">
       <div class="hero">
         <p class="eyebrow">BOOK PAGE → TRANSLATION</p>
@@ -94,6 +102,9 @@
       <div class="read-toolbar">
         <p id="read-stats" class="read-stats"></p>
         <div class="actions compact">
+          <button id="notebook-btn" type="button" class="ghost small">
+            生词本 <span id="notebook-count" class="count-badge">0</span>
+          </button>
           <button id="edit-text" type="button" class="ghost small">编辑原文</button>
           <button id="restart" type="button" class="ghost small">重新开始</button>
         </div>
@@ -125,7 +136,58 @@
       <h4>常用义 <span class="tag">modern senses</span></h4>
       <ul id="card-common" class="sense-list"></ul>
     </div>
+    <p id="card-notebook" class="card-notebook" hidden></p>
     <p id="card-demo" class="card-demo" hidden>演示数据：配置 API Key 后会使用真实模型。</p>
+  </aside>
+
+  <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+  <aside id="notebook-drawer" class="notebook-drawer" hidden role="dialog" aria-modal="true" aria-label="生词本">
+    <header class="drawer-head">
+      <div>
+        <p class="eyebrow">VOCABULARY</p>
+        <h2>生词本</h2>
+      </div>
+      <button id="drawer-close" type="button" class="card-close" aria-label="关闭">×</button>
+    </header>
+
+    <div class="drawer-tabs" role="tablist">
+      <button id="tab-current" type="button" class="tab is-active" role="tab" aria-selected="true">
+        本篇 <span id="tab-current-count">0</span>
+      </button>
+      <button id="tab-all" type="button" class="tab" role="tab" aria-selected="false">
+        全部 <span id="tab-all-count">0</span>
+      </button>
+    </div>
+
+    <div id="panel-current" class="drawer-panel" role="tabpanel">
+      <div id="notebook-empty" class="drawer-empty">
+        <p class="drawer-empty-title">还没有生词</p>
+        <p>回到文章，点一下你想记的词或短语，它会自动收进来。</p>
+      </div>
+
+      <div id="notebook-body" hidden>
+        <input id="notebook-title" class="notebook-title" maxlength="120" aria-label="生词本标题">
+        <p id="notebook-meta" class="notebook-meta"></p>
+
+        <div class="review-box">
+          <label for="review-date">下次复习日期</label>
+          <input id="review-date" type="date">
+          <p id="review-hint" class="review-hint"></p>
+        </div>
+
+        <ul id="entry-list" class="entry-list"></ul>
+
+        <div class="drawer-actions">
+          <a id="export-md" class="ghost small" href="#" download>Markdown</a>
+          <a id="export-ics" class="ghost small" href="#" download>.ics 日历</a>
+          <a id="export-vocab" class="ghost small" href="/api/notebooks/export/vocabcurve.txt" download>给 vocabcurve</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="panel-all" class="drawer-panel" role="tabpanel" hidden>
+      <div id="all-list" class="all-list"></div>
+    </div>
   </aside>
 
   <div id="toast" class="toast" role="status" hidden></div>

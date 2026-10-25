@@ -4,7 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { HttpError, LlmError } from './lib/errors.js';
+import { isDateOnly, todayInZone } from './lib/time.js';
 import { normalizeText, splitParagraphs } from './lib/text.js';
+import { buildIcs } from './ics.js';
+import { dueNotebooks } from './reminders.js';
+import { createStore, summarizeNotebook } from './store.js';
 
 const defaultPublicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -34,8 +38,67 @@ function detectImageType(buffer) {
   return null;
 }
 
-export function createApp({ config, llm, publicDir = defaultPublicDir }) {
+function notebookMarkdown(notebook) {
+  const lines = [
+    `# ${notebook.title}`,
+    '',
+    `- 创建：${notebook.createdAt}`,
+    `- 下次复习：${notebook.reviewDate ?? '未设置'}`,
+    `- 词数：${notebook.entries.length}`,
+    '',
+  ];
+
+  for (const entry of notebook.entries) {
+    lines.push(`## ${entry.term}`);
+    if (entry.lemma && entry.lemma.toLowerCase() !== entry.term.toLowerCase()) {
+      lines.push(`- 原形：${entry.lemma}`);
+    }
+    lines.push(
+      `- 语境义：${[entry.contextual?.pos, entry.contextual?.meaning].filter(Boolean).join(' ')}`,
+    );
+    if (entry.common?.length) {
+      lines.push(
+        `- 常用义：${entry.common
+          .map((item) => [item.pos, item.meaning].filter(Boolean).join(' '))
+          .join('；')}`,
+      );
+    }
+    if (entry.sentence) lines.push(`- 原句：${entry.sentence}`);
+    lines.push('');
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+/** Text format understood by `vocabcurve import`. */
+function vocabcurveText(notebooks) {
+  const lists = notebooks.filter((notebook) => notebook.entries.length);
+  const lines = [];
+
+  lists.forEach((notebook, index) => {
+    lines.push(`第${index + 1}篇 ${notebook.title.replace(/\s+/g, ' ')}`);
+    for (const entry of notebook.entries) {
+      const meaning =
+        entry.contextual?.meaning || entry.common?.[0]?.meaning || '—';
+      lines.push(`${entry.term}  ${meaning}`);
+    }
+    lines.push('');
+  });
+
+  return lines.join('\n');
+}
+
+function sendDownload(res, filename, contentType, body) {
+  res.setHeader('Content-Type', `${contentType}; charset=utf-8`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(body);
+}
+
+export function createApp({ config, llm, store, publicDir = defaultPublicDir }) {
   const app = express();
+  const notebooks =
+    store ?? createStore({ dataDir: config.dataDir, timeZone: config.timeZone });
+
   app.disable('x-powered-by');
 
   app.use((req, res, next) => {
@@ -66,6 +129,14 @@ export function createApp({ config, llm, publicDir = defaultPublicDir }) {
     limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 },
   });
 
+  const today = () => todayInZone(config.timeZone);
+
+  function requireNotebook(id) {
+    const notebook = notebooks.get(id);
+    if (!notebook) throw new HttpError(404, '生词本不存在。', 'not_found');
+    return notebook;
+  }
+
   app.get('/api/config', (req, res) => {
     res.json({
       demo: config.demo,
@@ -73,6 +144,9 @@ export function createApp({ config, llm, publicDir = defaultPublicDir }) {
       visionModel: config.demo ? 'demo' : config.vision.model,
       bookContext: config.bookContext,
       maxUploadMb: config.maxUploadMb,
+      remindAt: config.remindAt,
+      timeZone: config.timeZone,
+      today: today(),
     });
   });
 
@@ -108,11 +182,17 @@ export function createApp({ config, llm, publicDir = defaultPublicDir }) {
       const text = readString(req.body?.text, '原文', { max: 20000 });
       const context =
         readString(req.body?.context, '书籍背景', { required: false, max: 200 }) || config.bookContext;
+      const requestedId = readString(req.body?.notebookId, '生词本', { required: false, max: 80 });
 
       const paragraphs = splitParagraphs(text);
       if (!paragraphs.length) throw new HttpError(400, '没有可翻译的段落。');
 
       const translations = await llm.translateParagraphs(paragraphs, context);
+
+      const existing = requestedId ? notebooks.get(requestedId) : null;
+      const notebook = existing
+        ? notebooks.updateSource(existing.id, text)
+        : notebooks.create({ source: text });
 
       res.json({
         demo: config.demo,
@@ -121,6 +201,7 @@ export function createApp({ config, llm, publicDir = defaultPublicDir }) {
           source,
           translation: translations[index] ?? '',
         })),
+        notebook,
       });
     }),
   );
@@ -135,11 +216,139 @@ export function createApp({ config, llm, publicDir = defaultPublicDir }) {
       const paragraph = readString(req.body?.paragraph, '段落', { required: false, max: 4000 });
       const context =
         readString(req.body?.context, '书籍背景', { required: false, max: 200 }) || config.bookContext;
+      const notebookId = readString(req.body?.notebookId, '生词本', {
+        required: false,
+        max: 80,
+      });
 
       const sense = await llm.explainWord({ word, sentence, paragraph, context });
-      res.json({ ...sense, demo: config.demo });
+
+      let notebookEntry = null;
+      if (notebookId) {
+        const result = notebooks.addEntry(notebookId, {
+          term: word,
+          lemma: sense.lemma,
+          contextual: sense.contextual,
+          common: sense.common,
+          sentence,
+        });
+        if (result) notebookEntry = { id: result.entry.id, added: result.added };
+      }
+
+      res.json({ ...sense, demo: config.demo, notebookEntry });
     }),
   );
+
+  app.get('/api/notebooks', (req, res) => {
+    const all = notebooks.list();
+    const date = today();
+
+    res.json({
+      today: date,
+      notebooks: all.map(summarizeNotebook),
+      due: dueNotebooks(all, date, { includeNotified: true }).map(summarizeNotebook),
+    });
+  });
+
+  app.post('/api/notebooks', (req, res) => {
+    const title = readString(req.body?.title, '标题', { required: false, max: 120 });
+    const source = readString(req.body?.source, '原文', { required: false, max: 20000 });
+    const notebook = notebooks.create({ title, source });
+
+    res.status(201).json({ notebook });
+  });
+
+  app.get('/api/notebooks/export.ics', (req, res) => {
+    const ics = buildIcs(notebooks.list(), {
+      timeZone: config.timeZone,
+      remindAt: config.remindAt,
+    });
+    sendDownload(res, 'auto-transformation-reviews.ics', 'text/calendar', ics);
+  });
+
+  app.get('/api/notebooks/export/vocabcurve.txt', (req, res) => {
+    sendDownload(
+      res,
+      'auto-transformation-vocabcurve.txt',
+      'text/plain',
+      vocabcurveText(notebooks.list()),
+    );
+  });
+
+  app.get('/api/notebooks/:id/export.ics', (req, res) => {
+    const notebook = requireNotebook(req.params.id);
+    const ics = buildIcs([notebook], {
+      timeZone: config.timeZone,
+      remindAt: config.remindAt,
+    });
+    sendDownload(res, `auto-transformation-${notebook.id}.ics`, 'text/calendar', ics);
+  });
+
+  app.get('/api/notebooks/:id/export.md', (req, res) => {
+    const notebook = requireNotebook(req.params.id);
+    sendDownload(
+      res,
+      `auto-transformation-${notebook.id}.md`,
+      'text/markdown',
+      notebookMarkdown(notebook),
+    );
+  });
+
+  app.get('/api/notebooks/:id', (req, res) => {
+    res.json({ notebook: requireNotebook(req.params.id) });
+  });
+
+  app.patch('/api/notebooks/:id', (req, res) => {
+    const notebook = requireNotebook(req.params.id);
+    const body = req.body ?? {};
+    const patch = {};
+
+    if (Object.hasOwn(body, 'title')) {
+      patch.title = readString(body.title, '标题', { max: 120 });
+    }
+
+    if (Object.hasOwn(body, 'reviewDate')) {
+      if (body.reviewDate === null || body.reviewDate === '') {
+        patch.reviewDate = null;
+      } else {
+        const value = readString(body.reviewDate, '复习日期', { max: 10 });
+        if (!isDateOnly(value)) throw new HttpError(400, '复习日期格式应为 YYYY-MM-DD。');
+        patch.reviewDate = value;
+      }
+    }
+
+    res.json({ notebook: notebooks.update(notebook.id, patch) });
+  });
+
+  app.delete('/api/notebooks/:id', (req, res) => {
+    requireNotebook(req.params.id);
+    notebooks.remove(req.params.id);
+    res.status(204).end();
+  });
+
+  app.post('/api/notebooks/:id/entries', (req, res) => {
+    const notebook = requireNotebook(req.params.id);
+    const term = readString(req.body?.term ?? req.body?.word, '单词', { max: 120 });
+    if (!/[A-Za-z]/.test(term)) throw new HttpError(400, '请选择一个英文单词或短语。');
+
+    const result = notebooks.addEntry(notebook.id, {
+      term,
+      lemma: req.body?.lemma,
+      contextual: req.body?.contextual,
+      common: req.body?.common,
+      sentence: req.body?.sentence,
+    });
+
+    res.status(result.added ? 201 : 200).json({ entry: result.entry, added: result.added });
+  });
+
+  app.delete('/api/notebooks/:id/entries/:entryId', (req, res) => {
+    const notebook = requireNotebook(req.params.id);
+    if (!notebooks.removeEntry(notebook.id, req.params.entryId)) {
+      throw new HttpError(404, '这个词不在生词本里。', 'not_found');
+    }
+    res.status(204).end();
+  });
 
   app.use(express.static(publicDir, { extensions: ['html'] }));
 

@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createApp } from '../server/app.js';
 import { loadConfig } from '../server/config.js';
 import { LlmError } from '../server/lib/errors.js';
 import { createLlm, mockContent } from '../server/llm.js';
 import { splitParagraphs } from '../server/lib/text.js';
+import { createStore } from '../server/store.js';
 
 process.env.NODE_ENV = 'test';
 
@@ -37,17 +41,20 @@ function fakeLlm(overrides = {}) {
 }
 
 async function withServer(llm, run) {
+  const dataDir = mkdtempSync(join(tmpdir(), 'at-api-'));
   const config = loadConfig({ LLM_MOCK: '1', LLM_API_KEY: '' });
-  const app = createApp({ config, llm });
+  const store = createStore({ dataDir, timeZone: config.timeZone });
+  const app = createApp({ config, llm, store });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address();
 
   try {
-    await run(`http://127.0.0.1:${port}`);
+    await run(`http://127.0.0.1:${port}`, store);
   } finally {
     server.closeAllConnections?.();
     await new Promise((resolve) => server.close(resolve));
+    rmSync(dataDir, { recursive: true, force: true });
   }
 }
 

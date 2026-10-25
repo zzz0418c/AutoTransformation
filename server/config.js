@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Minimal .env reader. Avoids a dependency for the one thing we need:
@@ -44,6 +44,8 @@ export function loadConfig(env = process.env) {
   const textModel = text(env.LLM_MODEL, 'deepseek-chat');
 
   const demo = truthy(env.LLM_MOCK) || !textKey;
+  const dataDir = text(env.DATA_DIR, 'data');
+  const remindAt = text(env.REMIND_AT, '07:30');
 
   return {
     demo,
@@ -52,6 +54,11 @@ export function loadConfig(env = process.env) {
     timeoutMs: Number(env.LLM_TIMEOUT_MS) || 90_000,
     maxUploadMb: Number(env.MAX_UPLOAD_MB) || 12,
     bookContext: text(env.BOOK_CONTEXT, '19 世纪英国小说'),
+    dataDir: isAbsolute(dataDir) ? dataDir : resolve(projectRoot, dataDir),
+    timeZone: text(env.TIMEZONE, 'Asia/Shanghai'),
+    remindAt: /^\d{2}:\d{2}$/.test(remindAt) ? remindAt : '07:30',
+    pushUrl: text(env.PUSH_URL, ''),
+    pushFormat: text(env.PUSH_FORMAT, 'wecom').toLowerCase(),
     text: { key: textKey, baseUrl: textBaseUrl, model: textModel },
     vision: {
       key: text(env.VISION_API_KEY, textKey),

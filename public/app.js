@@ -16,6 +16,12 @@ const state = {
   activeSpan: null,
   lookupToken: 0,
   lastSelectionAt: 0,
+  notebook: null,
+  notebooks: [],
+  due: [],
+  today: '',
+  remindAt: '07:30',
+  drawerTab: 'current',
 };
 
 const steps = {
@@ -39,6 +45,19 @@ async function getJson(url, options) {
     throw new Error(data?.error?.message || `请求失败（${response.status}）`);
   }
   return data ?? {};
+}
+
+async function deleteRequest(url) {
+  let response;
+  try {
+    response = await fetch(url, { method: 'DELETE' });
+  } catch {
+    throw new Error('无法连接本地服务。');
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error?.message || `请求失败（${response.status}）`);
+  }
 }
 
 function contextValue() {
@@ -83,6 +102,41 @@ function storeContext(value) {
   }
 }
 
+function formatDateCn(date) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || '');
+  if (!match) return date || '';
+  return `${Number(match[2])}月${Number(match[3])}日`;
+}
+
+function dayNumber(date) {
+  const [year, month, day] = date.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function daysBetween(from, to) {
+  if (!from || !to) return 0;
+  return Math.round((dayNumber(to) - dayNumber(from)) / 86_400_000);
+}
+
+function formatDateTime(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function reviewHint(date) {
+  if (!date) return '选一个日期。当天会出现在日历里，也可以推送到微信。';
+
+  const diff = daysBetween(state.today, date);
+  const when = diff === 0 ? '今天' : diff > 0 ? `还有 ${diff} 天` : `已逾期 ${-diff} 天`;
+  return `${when} · ${state.remindAt} 提醒（.ics 或推送）`;
+}
+
 /* ----------------------------------------------------------------- upload */
 
 async function shrinkImage(file) {
@@ -121,6 +175,9 @@ async function handleFile(file) {
     return;
   }
 
+  setNotebook(null);
+  closeDrawer();
+
   let prepared = file;
   try {
     prepared = await shrinkImage(file);
@@ -150,6 +207,7 @@ function clearImage() {
   $('#file-input').value = '';
   $('#ocr-btn').disabled = true;
   $('#dropzone').classList.remove('has-image');
+  setNotebook(null);
 }
 
 function gotoText(text) {
@@ -205,14 +263,20 @@ async function runTranslate() {
     const data = await getJson('/api/translate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, context: contextValue() }),
+      body: JSON.stringify({
+        text,
+        context: contextValue(),
+        notebookId: state.notebook?.id,
+      }),
     });
 
     state.paragraphs = Array.isArray(data.paragraphs) ? data.paragraphs : [];
     if (!state.paragraphs.length) throw new Error('没有返回译文，请重试。');
 
+    if (data.notebook) setNotebook(data.notebook);
     renderReading();
     showStep('read');
+    await loadNotebooks();
   } catch (error) {
     toast(error.message);
   } finally {
@@ -260,6 +324,278 @@ function renderReading() {
   });
 
   $('#read-stats').textContent = `${state.paragraphs.length} 段 · ${words} 词`;
+}
+
+/* --------------------------------------------------------------- notebook */
+
+function setNotebook(notebook) {
+  state.notebook = notebook || null;
+  const count = state.notebook ? state.notebook.entries.length : 0;
+
+  $('#notebook-count').textContent = String(count);
+  $('#tab-current-count').textContent = String(count);
+
+  if (state.notebook) {
+    $('#notebook-btn').disabled = false;
+  }
+
+  if (!$('#notebook-drawer').hidden && state.drawerTab === 'current') {
+    renderCurrentNotebook();
+  }
+}
+
+async function loadNotebooks() {
+  try {
+    const data = await getJson('/api/notebooks');
+    state.notebooks = Array.isArray(data.notebooks) ? data.notebooks : [];
+    state.due = Array.isArray(data.due) ? data.due : [];
+    state.today = data.today || state.today;
+
+    $('#tab-all-count').textContent = String(state.notebooks.length);
+    renderDueBanner();
+
+    if (!$('#notebook-drawer').hidden && state.drawerTab === 'all') {
+      renderAllList();
+    }
+  } catch {
+    // Keep the reading UI usable even if the local store cannot be read.
+  }
+}
+
+async function refreshCurrentNotebook() {
+  if (!state.notebook) return;
+  const data = await getJson(`/api/notebooks/${state.notebook.id}`);
+  setNotebook(data.notebook);
+}
+
+function renderDueBanner() {
+  const banner = $('#due-banner');
+
+  if (!state.due.length) {
+    banner.hidden = true;
+    return;
+  }
+
+  const overdue = state.due.some((item) => item.reviewDate < state.today);
+  $('#due-title').textContent = overdue
+    ? `${state.due.length} 个生词本待复习`
+    : `今天有 ${state.due.length} 个生词本要复习`;
+  $('#due-text').textContent = state.due
+    .slice(0, 3)
+    .map((item) => item.title)
+    .join(' · ');
+  banner.hidden = false;
+}
+
+function renderCurrentNotebook() {
+  const empty = $('#notebook-empty');
+  const body = $('#notebook-body');
+  const notebook = state.notebook;
+
+  if (!notebook) {
+    empty.hidden = false;
+    body.hidden = true;
+    $('#tab-current-count').textContent = '0';
+    return;
+  }
+
+  empty.hidden = true;
+  body.hidden = false;
+
+  $('#notebook-title').value = notebook.title;
+  $('#notebook-meta').textContent = `创建于 ${formatDateTime(notebook.createdAt)} · ${notebook.entries.length} 个词`;
+  $('#review-date').value = notebook.reviewDate || '';
+  $('#review-hint').textContent = reviewHint(notebook.reviewDate);
+  $('#export-md').href = `/api/notebooks/${notebook.id}/export.md`;
+  $('#export-ics').href = `/api/notebooks/${notebook.id}/export.ics`;
+
+  renderEntries();
+}
+
+function renderEntries() {
+  const list = $('#entry-list');
+  list.replaceChildren();
+
+  if (!state.notebook || !state.notebook.entries.length) {
+    const empty = document.createElement('li');
+    empty.className = 'entry-empty';
+    empty.textContent = '这一篇还没有词。回文章里点几个。';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const entry of state.notebook.entries) {
+    const item = document.createElement('li');
+    item.className = 'entry';
+
+    const head = document.createElement('div');
+    head.className = 'entry-head';
+
+    const term = document.createElement('span');
+    term.className = 'entry-term';
+    term.textContent = entry.term;
+    head.appendChild(term);
+
+    if (entry.lemma && entry.lemma.toLowerCase() !== entry.term.toLowerCase()) {
+      const lemma = document.createElement('span');
+      lemma.className = 'entry-lemma';
+      lemma.textContent = `原形 ${entry.lemma}`;
+      head.appendChild(lemma);
+    }
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'entry-remove';
+    remove.dataset.remove = entry.id;
+    remove.textContent = '移除';
+    head.appendChild(remove);
+
+    const sense = document.createElement('p');
+    sense.className = 'entry-sense';
+    if (entry.contextual?.pos) {
+      const pos = document.createElement('span');
+      pos.className = 'pos';
+      pos.textContent = entry.contextual.pos;
+      sense.appendChild(pos);
+    }
+    sense.appendChild(document.createTextNode(entry.contextual?.meaning || '—'));
+
+    const sentence = document.createElement('p');
+    sentence.className = 'entry-sentence';
+    sentence.textContent = entry.sentence || '';
+    sentence.hidden = !entry.sentence;
+
+    item.append(head, sense, sentence);
+    list.appendChild(item);
+  }
+}
+
+function renderAllList() {
+  const container = $('#all-list');
+  container.replaceChildren();
+
+  if (!state.notebooks.length) {
+    const empty = document.createElement('p');
+    empty.className = 'drawer-empty';
+    empty.textContent = '还没有生词本。翻译一页并在文章里点几个词就会生成。';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const summary of state.notebooks) {
+    const details = document.createElement('details');
+    details.className = 'nb-item';
+    details.dataset.id = summary.id;
+
+    const header = document.createElement('summary');
+
+    const title = document.createElement('span');
+    title.className = 'nb-title';
+    title.textContent = summary.title;
+
+    const meta = document.createElement('span');
+    meta.className = 'nb-meta';
+    meta.textContent = summary.reviewDate
+      ? `${formatDateCn(summary.reviewDate)} · ${summary.entryCount} 词`
+      : `${summary.entryCount} 词`;
+
+    header.append(title, meta);
+
+    if (
+      summary.reviewDate &&
+      summary.reviewDate <= state.today &&
+      summary.entryCount > 0
+    ) {
+      const badge = document.createElement('span');
+      badge.className = 'due-badge';
+      badge.textContent = '到期';
+      header.appendChild(badge);
+    }
+
+    const panel = document.createElement('div');
+    panel.className = 'nb-entries';
+    panel.textContent = '加载中…';
+
+    details.append(header, panel);
+
+    details.addEventListener('toggle', async () => {
+      if (!details.open || details.dataset.loaded === '1') return;
+      details.dataset.loaded = '1';
+
+      try {
+        const data = await getJson(`/api/notebooks/${summary.id}`);
+        const notebook = data.notebook;
+        panel.replaceChildren();
+
+        if (!notebook.entries.length) {
+          const empty = document.createElement('p');
+          empty.className = 'nb-empty';
+          empty.textContent = '这篇还没有词。';
+          panel.appendChild(empty);
+          return;
+        }
+
+        for (const entry of notebook.entries) {
+          const row = document.createElement('div');
+          row.className = 'nb-entry';
+
+          const term = document.createElement('strong');
+          term.textContent = entry.term;
+
+          const meaning = document.createElement('span');
+          meaning.textContent = entry.contextual?.meaning || '';
+
+          row.append(term, meaning);
+          panel.appendChild(row);
+        }
+      } catch (error) {
+        panel.textContent = error.message;
+      }
+    });
+
+    container.appendChild(details);
+  }
+}
+
+function openDrawer(tab = 'current') {
+  closeCard();
+  state.drawerTab = tab;
+  $('#notebook-drawer').hidden = false;
+  $('#drawer-backdrop').hidden = false;
+  document.body.classList.add('drawer-open');
+  switchDrawerTab(tab);
+  $('#drawer-close').focus({ preventScroll: true });
+}
+
+function closeDrawer() {
+  $('#notebook-drawer').hidden = true;
+  $('#drawer-backdrop').hidden = true;
+  document.body.classList.remove('drawer-open');
+}
+
+function switchDrawerTab(tab) {
+  state.drawerTab = tab;
+
+  const current = tab === 'current';
+  $('#tab-current').classList.toggle('is-active', current);
+  $('#tab-all').classList.toggle('is-active', !current);
+  $('#tab-current').setAttribute('aria-selected', String(current));
+  $('#tab-all').setAttribute('aria-selected', String(!current));
+
+  $('#panel-current').hidden = !current;
+  $('#panel-all').hidden = current;
+
+  if (current) renderCurrentNotebook();
+  else renderAllList();
+}
+
+async function patchNotebook(patch) {
+  if (!state.notebook) throw new Error('还没有生词本。');
+  return getJson(`/api/notebooks/${state.notebook.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
 }
 
 /* ------------------------------------------------------------------ lookup */
@@ -316,6 +652,7 @@ function showCardLoading(term, sentence, rect) {
   $('#card-lemma').textContent = '';
   $('#card-sentence').textContent = sentence;
   $('#card-demo').hidden = true;
+  $('#card-notebook').hidden = true;
 
   const contextual = $('#card-contextual');
   contextual.textContent = '正在查这个词…';
@@ -373,6 +710,7 @@ function renderCardError(message, rect) {
   contextual.classList.remove('loading');
   contextual.textContent = message;
   $('#card-common').replaceChildren();
+  $('#card-notebook').hidden = true;
   placeCard(rect);
 }
 
@@ -394,11 +732,24 @@ async function lookup(term, paragraphElement, start, end, rect) {
         sentence,
         paragraph: plain,
         context: contextValue(),
+        notebookId: state.notebook?.id,
       }),
     });
 
     if (token !== state.lookupToken) return;
     renderCard(data, term, sentence, rect);
+
+    const note = $('#card-notebook');
+    if (data.notebookEntry) {
+      note.hidden = false;
+      note.textContent = data.notebookEntry.added ? '已加入生词本' : '已在生词本中';
+
+      if (data.notebookEntry.added) {
+        toast(`已加入生词本 · ${term}`);
+        await refreshCurrentNotebook();
+        await loadNotebooks();
+      }
+    }
   } catch (error) {
     if (token !== state.lookupToken) return;
     renderCardError(error.message, rect);
@@ -468,7 +819,10 @@ function bindEvents() {
   });
 
   $('#ocr-btn').addEventListener('click', runOcr);
-  $('#skip-ocr').addEventListener('click', () => gotoText(''));
+  $('#skip-ocr').addEventListener('click', () => {
+    setNotebook(null);
+    gotoText('');
+  });
   $('#sample-btn').addEventListener('click', loadSample);
   $('#back-upload').addEventListener('click', () => showStep('upload'));
   $('#translate-btn').addEventListener('click', runTranslate);
@@ -492,8 +846,77 @@ function bindEvents() {
   $('#restart').addEventListener('click', restart);
   $('#card-close').addEventListener('click', closeCard);
 
+  $('#notebook-btn').addEventListener('click', () => {
+    openDrawer(state.notebook ? 'current' : 'all');
+  });
+  $('#due-open').addEventListener('click', () => openDrawer('all'));
+  $('#drawer-close').addEventListener('click', closeDrawer);
+  $('#drawer-backdrop').addEventListener('click', closeDrawer);
+
+  $('#tab-current').addEventListener('click', () => switchDrawerTab('current'));
+  $('#tab-all').addEventListener('click', () => switchDrawerTab('all'));
+
+  $('#notebook-title').addEventListener('change', async () => {
+    if (!state.notebook) return;
+
+    const title = $('#notebook-title').value.trim();
+    if (!title) {
+      $('#notebook-title').value = state.notebook.title;
+      return;
+    }
+    if (title === state.notebook.title) return;
+
+    try {
+      const data = await patchNotebook({ title });
+      setNotebook(data.notebook);
+      await loadNotebooks();
+      toast('标题已更新');
+    } catch (error) {
+      toast(error.message);
+      $('#notebook-title').value = state.notebook.title;
+    }
+  });
+
+  $('#review-date').addEventListener('change', async () => {
+    if (!state.notebook) return;
+
+    const value = $('#review-date').value || null;
+
+    try {
+      const data = await patchNotebook({ reviewDate: value });
+      setNotebook(data.notebook);
+      await loadNotebooks();
+      toast(value ? `复习日期已设为 ${formatDateCn(value)}` : '已清除复习日期');
+    } catch (error) {
+      toast(error.message);
+      $('#review-date').value = state.notebook.reviewDate || '';
+    }
+  });
+
+  $('#entry-list').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-remove]');
+    if (!button || !state.notebook) return;
+
+    try {
+      await deleteRequest(
+        `/api/notebooks/${state.notebook.id}/entries/${button.dataset.remove}`,
+      );
+      await refreshCurrentNotebook();
+      await loadNotebooks();
+      toast('已从生词本移除');
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeCard();
+    if (event.key !== 'Escape') return;
+
+    if (!$('#notebook-drawer').hidden) {
+      closeDrawer();
+      return;
+    }
+    closeCard();
   });
 
   document.addEventListener('click', (event) => {
@@ -569,6 +992,8 @@ function bindEvents() {
 /* ------------------------------------------------------------------- flow */
 
 async function loadSample() {
+  setNotebook(null);
+  closeDrawer();
   $('#source-text').value = SAMPLE_TEXT;
   updateCount();
   showStep('text');
@@ -591,6 +1016,8 @@ function restart() {
   $('#reading').replaceChildren();
   updateCount();
   closeCard();
+  closeDrawer();
+  setNotebook(null);
   showStep('upload');
 }
 
@@ -603,6 +1030,8 @@ async function init() {
     state.demo = Boolean(config.demo);
     state.maxUploadMb = Number(config.maxUploadMb) || 12;
     state.bookContext = config.bookContext || '';
+    state.remindAt = config.remindAt || '07:30';
+    state.today = config.today || '';
 
     $('#book-context').value = readStoredContext() || state.bookContext;
 
@@ -615,6 +1044,8 @@ async function init() {
     toast(error.message);
     return;
   }
+
+  await loadNotebooks();
 
   if (new URLSearchParams(window.location.search).get('sample') === '1') {
     await loadSample();
