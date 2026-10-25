@@ -1150,6 +1150,63 @@ body.drawer-open {
   font-size: 0.8rem;
 }
 
+/* ------------------------------------------------------- large tablets */
+
+@media (min-width: 1180px) {
+  .topbar,
+  main,
+  .footer {
+    max-width: 1240px;
+  }
+
+  .hero {
+    max-width: 900px;
+  }
+
+  .hero h1 {
+    font-size: clamp(3.2rem, 5vw, 4.6rem);
+  }
+
+  .para.en {
+    font-size: 1.24rem;
+    line-height: 2;
+  }
+
+  .para.zh {
+    font-size: 1.06rem;
+    line-height: 2.1;
+  }
+
+  .pair {
+    gap: 72px;
+    padding: 36px 0;
+  }
+
+  .word-card {
+    width: 420px;
+  }
+
+  .notebook-drawer {
+    width: 480px;
+  }
+}
+
+@media (pointer: coarse) {
+  .w {
+    padding: 2px 1px;
+    touch-action: manipulation;
+  }
+
+  .primary,
+  .ghost {
+    min-height: 44px;
+  }
+
+  .entry-remove {
+    padding: 6px 0 6px 12px;
+  }
+}
+
 /* ------------------------------------------------------------- responsive */
 
 @media (max-width: 900px) {

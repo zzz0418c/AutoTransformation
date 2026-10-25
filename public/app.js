@@ -563,6 +563,13 @@ function openDrawer(tab = 'current') {
   $('#notebook-drawer').hidden = false;
   $('#drawer-backdrop').hidden = false;
   document.body.classList.add('drawer-open');
+
+  if (state.notebook) {
+    refreshCurrentNotebook().catch(() => {
+      // Keep the last known entries if the local service blips.
+    });
+  }
+
   switchDrawerTab(tab);
   $('#drawer-close').focus({ preventScroll: true });
 }
@@ -743,12 +750,14 @@ async function lookup(term, paragraphElement, start, end, rect) {
     if (data.notebookEntry) {
       note.hidden = false;
       note.textContent = data.notebookEntry.added ? '已加入生词本' : '已在生词本中';
-
       if (data.notebookEntry.added) {
         toast(`已加入生词本 · ${term}`);
-        await refreshCurrentNotebook();
-        await loadNotebooks();
       }
+    }
+
+    if (state.notebook) {
+      await refreshCurrentNotebook();
+      await loadNotebooks();
     }
   } catch (error) {
     if (token !== state.lookupToken) return;

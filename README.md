@@ -95,6 +95,60 @@ powershell -ExecutionPolicy Bypass -File scripts\install-desktop-app.ps1
 - 也可以直接浏览器安装：用 Edge 打开页面 → 「安装此站点为应用」。`manifest.webmanifest` 和 service worker 已经准备好；PWA 仍然需要本地服务在跑。
 - 移动了项目目录，重新执行一次安装脚本即可（快捷方式里是绝对路径）。
 
+## 平板 APK（Android）
+
+已装到平板并实测：**vivo iPA2575 / Android 16 / 3096×2064**（横屏约 1238 CSS px）。
+
+![平板阅读](docs/tablet-reading-landscape.png)
+
+![平板生词本](docs/tablet-word-landscape.png)
+
+### 形态
+
+- 系统 WebView + 原生顶栏（刷新 / 服务器），不引 AndroidX、不引第三方库，APK 约 33 KB。
+- 服务仍然跑在电脑上；平板只负责显示和交互。
+- 图片选择走 Android 系统相册 / 照片选择器；`.ics`、Markdown 下载交给浏览器。
+- 服务器地址保存在平板本地，点顶栏「服务器」可改。
+
+### 安装 / 调试
+
+```powershell
+adb install -r dist\AutoTransformation-tablet.apk
+adb reverse tcp:8787 tcp:8787
+adb shell am start -n com.zzz0418c.autotransformation/.MainActivity
+```
+
+`adb reverse` 把平板的 `127.0.0.1:8787` 转到电脑上的服务，USB 调试期间有效；重新插拔后重跑一次即可。App 默认地址就是 `http://127.0.0.1:8787`。
+
+### 自己构建
+
+需要 JDK 17、Android SDK Platform 34、Build Tools 34（不需要 Gradle）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File android\build.ps1 -Jdk "C:\path\to\jdk-17"
+```
+
+输出 `dist\AutoTransformation-tablet.apk`，debug 签名，直接 `adb install` 安装。构建脚本在 `android/build.ps1`。
+
+### 不插 USB：走 Wi-Fi
+
+电脑端让服务监听局域网：
+
+```powershell
+$env:HOST="0.0.0.0"
+npm start
+```
+
+平板上点「服务器」，填 `http://电脑局域网IP:8787`（例如 `http://192.168.1.20:8787`），Windows 防火墙允许 Node 访问专用网络。
+
+> 这会把服务暴露给同一 Wi-Fi 下的设备，别人也能消耗你的 API 额度。只在可信网络里这样用。
+
+### 大屏适配
+
+- 横屏 ≥1180 CSS px：阅读区自动变成左右两栏，正文和译文各约 551 px；竖屏自动回到单栏上下对照。
+- 触摸端加大行高和按钮最小高度（44dp），点词、划词、生词本抽屉都能直接用。
+- 平板实测：加载示例、点 `want` 出卡片、自动进生词本、打开抽屉、系统图片选择器、横竖屏切换均正常。
+
 ## 配置
 
 文本模型负责翻译和词义，视觉模型负责图片转录；两者都走 OpenAI 兼容的 `/chat/completions`。
@@ -314,8 +368,14 @@ scripts/
   install-desktop-app.ps1  创建桌面 / 开始菜单快捷方式
   stop-app.ps1    停止后台服务
   install-reminder.ps1  Windows 每日提醒任务
+android/
+  AndroidManifest.xml
+  src/.../MainActivity.java  WebView 壳 + 原生顶栏 + 图片选择
+  res/mipmap-*/    启动图标
+  build.ps1        aapt2 / javac / d8 / apksigner 手动构建
 tests/            node:test 单元测试与接口测试
 data/             生词本与通知日志（运行时生成，已 gitignore）
+dist/             APK 输出（已 gitignore）
 ```
 
 ## 测试
@@ -334,10 +394,14 @@ npm test
 - 只有在你配置 `PUSH_URL` 后，到期摘要（标题 + 词数）才会发到你自己的 webhook。
 - API Key 只存在 `.env`，接口不会把 Key 返回给前端。
 - Service Worker 只缓存界面静态文件（HTML/CSS/JS/图标），`/api/` 请求不缓存，也不落盘。
+- 平板 APK 只声明 `INTERNET` 权限；图片通过系统选择器授权读取，不申请存储权限。
 
 ## 已知限制
 
 - 网页版需要 Node 服务在跑；桌面快捷方式会自动拉起，但关掉服务后 App 窗口里的识别/翻译会失败。
+- 平板 APK 也只是壳：电脑上的服务必须运行；USB 模式依赖 `adb reverse`，拔线后要改用 Wi-Fi。
+- APK 是 debug 签名，适合自用/侧载，不适合直接上应用商店。
+- 平板没有单独的拍照入口，用系统照片选择器选相机刚拍的照片即可。
 - 桌面 App 依赖 Edge 或 Chrome；两者都没有时会退回默认浏览器的标签页。
 - 快捷方式里记录的是绝对路径，移动项目目录后需要重新执行一次安装脚本。
 - 花体、手写、严重倾斜、两页跨页的照片识别率会明显下降；识别结果需要你校对。

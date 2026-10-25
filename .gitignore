@@ -9,3 +9,5 @@ coverage/
 tmp/
 uploads/
 data/
+dist/
+android/build/
