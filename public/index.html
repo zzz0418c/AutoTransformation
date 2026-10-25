@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoTransformation · 书页精读翻译</title>
+  <meta name="description" content="上传书页照片，得到整段中文译文；点击任意单词，查看它在句子里的意思和常用义。">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">AT</span>
+      <span class="brand-text">
+        <strong>AutoTransformation</strong>
+        <small>书页精读 · 整段翻译 · 点词双义</small>
+      </span>
+    </div>
+    <span id="mode-pill" class="pill">连接中…</span>
+  </header>
+
+  <main id="main">
+    <section id="step-upload" class="step">
+      <div class="hero">
+        <p class="eyebrow">BOOK PAGE → TRANSLATION</p>
+        <h1>把一页书，<br>读成一页<em>注释</em>。</h1>
+        <p class="lede">
+          上传书页照片，先得到整段中文译文；再点任意单词，看它<strong>在这里</strong>的意思，
+          和它平时最常用的意思。
+        </p>
+        <p id="demo-note" class="demo-note" hidden>
+          演示模式：还没有配置 API Key，识别、翻译、词义都会返回示例数据。
+        </p>
+      </div>
+
+      <label id="dropzone" class="dropzone" for="file-input" role="button" tabindex="0">
+        <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        <span class="drop-icon" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 8h18a5 5 0 0 1 5 5v27H16a5 5 0 0 1-5-5V8Z"/>
+            <path d="M11 35a5 5 0 0 1 5-5h18"/>
+            <path d="M18 16h10M18 22h10"/>
+            <path d="M39 14v14" stroke-dasharray="2 4"/>
+          </svg>
+        </span>
+        <span class="drop-title">拖入、粘贴或选择一张书页照片</span>
+        <span class="drop-hint">JPG / PNG / WebP · 建议单页、光线均匀、文字占满画面</span>
+      </label>
+
+      <div id="preview-wrap" class="preview" hidden>
+        <img id="preview" alt="待识别的书页预览">
+        <div class="preview-meta">
+          <span id="preview-name">page.jpg</span>
+          <button id="clear-image" type="button" class="text-btn">移除</button>
+        </div>
+      </div>
+
+      <div class="context-row">
+        <label for="book-context">
+          书籍背景
+          <span>会写进提示词，帮助模型选对义项和语气</span>
+        </label>
+        <input id="book-context" type="text" maxlength="200"
+               placeholder="例如：19 世纪英国小说 / 经济学教材 / 科技报道">
+      </div>
+
+      <div class="actions">
+        <button id="ocr-btn" type="button" class="primary" disabled>识别文字</button>
+        <button id="skip-ocr" type="button" class="ghost">直接粘贴英文</button>
+        <button id="sample-btn" type="button" class="ghost">载入示例段落</button>
+      </div>
+    </section>
+
+    <section id="step-text" class="step" hidden>
+      <div class="step-head">
+        <div>
+          <p class="eyebrow">STEP 02 · PROOFREAD</p>
+          <h2>校对识别结果</h2>
+        </div>
+        <span id="char-count" class="counter">0 字符</span>
+      </div>
+      <p class="hint">OCR 难免有错，先改再译。段落之间空一行，译文会逐段对齐。</p>
+      <textarea id="source-text" spellcheck="false" placeholder="It is a truth universally acknowledged…"></textarea>
+      <div class="actions">
+        <button id="translate-btn" type="button" class="primary">翻译这段</button>
+        <button id="back-upload" type="button" class="ghost">重新上传</button>
+      </div>
+    </section>
+
+    <section id="step-read" class="step step-read" hidden>
+      <div class="read-toolbar">
+        <p id="read-stats" class="read-stats"></p>
+        <div class="actions compact">
+          <button id="edit-text" type="button" class="ghost small">编辑原文</button>
+          <button id="restart" type="button" class="ghost small">重新开始</button>
+        </div>
+      </div>
+
+      <div id="reading" class="reading"></div>
+
+      <p class="read-hint">点击任意单词查看「语境义 / 常用义」；也可以划选一个短语。</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>AutoTransformation · 本地运行，API Key 不离开你的电脑</span>
+    <a href="https://github.com/zzz0418c/AutoTransformation" target="_blank" rel="noreferrer">GitHub</a>
+  </footer>
+
+  <aside id="word-card" class="word-card" hidden aria-live="polite">
+    <button id="card-close" type="button" class="card-close" aria-label="关闭">×</button>
+    <div class="card-head">
+      <h3 id="card-word"></h3>
+      <span id="card-lemma" class="lemma"></span>
+    </div>
+    <p id="card-sentence" class="card-sentence"></p>
+    <div class="sense">
+      <h4>语境义 <span class="tag">in this sentence</span></h4>
+      <p id="card-contextual" class="sense-main"></p>
+    </div>
+    <div class="sense">
+      <h4>常用义 <span class="tag">modern senses</span></h4>
+      <ul id="card-common" class="sense-list"></ul>
+    </div>
+    <p id="card-demo" class="card-demo" hidden>演示数据：配置 API Key 后会使用真实模型。</p>
+  </aside>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

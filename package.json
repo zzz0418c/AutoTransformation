@@ -1,0 +1,27 @@
+{
+  "name": "auto-transformation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Upload a book page, get a paragraph-by-paragraph Chinese translation, and click any word for its contextual and common meanings.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/start.js",
+    "dev": "node --watch server/start.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "ocr",
+    "translation",
+    "english-learning",
+    "llm",
+    "reading"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
+  }
+}
