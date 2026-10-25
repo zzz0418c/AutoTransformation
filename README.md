@@ -99,6 +99,10 @@ powershell -ExecutionPolicy Bypass -File scripts\install-desktop-app.ps1
 
 已装到平板并实测：**vivo iPA2575 / Android 16 / 3096×2064**（横屏约 1238 CSS px）。
 
+下载：[AutoTransformation-tablet-0.1.0.apk](https://github.com/zzz0418c/AutoTransformation/releases/download/tablet-v0.1.0/AutoTransformation-tablet-0.1.0.apk)（debug 签名）
+
+SHA256：`290BDF44A0A104D8D1101719F02A444D9C858E8494FB8FCC474C26555FE735C4`
+
 ![平板阅读](docs/tablet-reading-landscape.png)
 
 ![平板生词本](docs/tablet-word-landscape.png)
