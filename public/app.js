@@ -1124,10 +1124,11 @@ function getEbookMeasure() {
   return measure;
 }
 
-function measureEbookHeight(text, fontSize, width) {
+function measureEbookHeight(text, fontSize, width, lineHeight = 2.08) {
   const measure = getEbookMeasure();
   measure.style.width = `${width}px`;
   measure.style.fontSize = `${fontSize}px`;
+  measure.style.lineHeight = String(lineHeight);
   measure.replaceChildren();
 
   for (const paragraph of String(text).split(/\n{2,}/)) {
@@ -1138,6 +1139,27 @@ function measureEbookHeight(text, fontSize, width) {
   }
 
   return measure.scrollHeight;
+}
+
+function chooseEbookLineHeight(text, fontSize, width, height) {
+  const base = 2.08;
+  if (measureEbookHeight(text, fontSize, width, base) <= height * 0.93) {
+    let low = base;
+    let high = 2.55;
+    let best = base;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const middle = (low + high) / 2;
+      if (measureEbookHeight(text, fontSize, width, middle) <= height * 0.97) {
+        best = middle;
+        low = middle;
+      } else {
+        high = middle;
+      }
+    }
+    return best;
+  }
+  return base;
 }
 
 function chooseEbookFontSize(text, width, height) {
@@ -1272,10 +1294,14 @@ function buildEbookPageViews(page) {
     ? chunks
     : [{ text: text.trim(), start: 0, end: text.length }];
 
-  return safeChunks.map((chunk) => ({
+  return safeChunks.map((chunk, index) => ({
     ...chunk,
     pageLength: text.length,
     fontSize,
+    lineHeight:
+      index === safeChunks.length - 1
+        ? chooseEbookLineHeight(chunk.text, fontSize, width, height)
+        : 2.08,
   }));
 }
 
@@ -1336,6 +1362,7 @@ function renderEbookReader() {
 
   container.replaceChildren();
   container.style.fontSize = '';
+  container.style.lineHeight = '';
   toggle.textContent = state.ebookShowTranslation ? 'English' : '中文';
   toggle.setAttribute(
     'aria-label',
@@ -1386,6 +1413,7 @@ function renderEbookReader() {
   }
 
   container.style.fontSize = `${view.fontSize}px`;
+  container.style.lineHeight = String(view.lineHeight || 2.08);
   for (const paragraph of view.text.split(/\n{2,}/)) {
     const text = paragraph.trim();
     if (text) appendEbookParagraph(container, text);
@@ -1530,6 +1558,7 @@ function splitEbookViewsAtTarget(views, target) {
     start: view.start + split + chunk.start,
     end: view.start + split + chunk.end,
     pageLength: view.pageLength,
+    lineHeight: 2.08,
   }));
 
   const next = [...views.slice(0, index), first, ...restViews];
