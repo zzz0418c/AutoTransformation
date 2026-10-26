@@ -1109,6 +1109,13 @@ function ebookPageText(page) {
     .join('\n\n');
 }
 
+function ebookPageSourceText(page) {
+  return ebookPageParagraphs(page)
+    .map((paragraph) => paragraph.source)
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 function getEbookReadingBox() {
   const read = $('#ebook-read-text');
   if (!read) return { width: 600, height: 600 };
@@ -1339,16 +1346,18 @@ function buildEbookSegmentViews(startPage) {
 
   const safeStart = Math.min(Math.max(Number(startPage) || 0, 0), pages.length - 1);
   const ranges = [];
+  const paragraphs = [];
   let combined = '';
 
   for (let index = safeStart; index < pages.length; index += 1) {
     if (index - safeStart >= 12) break;
     const page = pages[index];
-    const text = ebookPageText(page);
+    const pageParagraphs = ebookPageParagraphs(page);
+    const sourceText = ebookPageSourceText(page);
 
-    if (index > safeStart && looksLikeChapterStart(text)) break;
+    if (index > safeStart && looksLikeChapterStart(sourceText)) break;
 
-    if (page.status !== 'done' || !String(text).trim()) {
+    if (page.status !== 'done' || !String(sourceText).trim()) {
       if (index === safeStart) {
         return {
           startPage: safeStart,
@@ -1357,6 +1366,8 @@ function buildEbookSegmentViews(startPage) {
             ...view,
             startPage: safeStart,
             endPage: safeStart,
+            translation: '',
+            chapter: false,
           })),
         };
       }
@@ -1364,17 +1375,67 @@ function buildEbookSegmentViews(startPage) {
     }
 
     const separator = combined ? '\n\n' : '';
-    const start = combined.length + separator.length;
-    combined += separator + text;
-    ranges.push({ pageIndex: index, start, end: combined.length });
+    const pageStart = combined.length + separator.length;
+    combined += separator;
+
+    for (const paragraph of pageParagraphs) {
+      const source = String(paragraph.source || '').trim();
+      if (!source) continue;
+      const gap = combined.length > pageStart ? '\n\n' : '';
+      const start = combined.length + gap.length;
+      combined += gap + source;
+      paragraphs.push({
+        pageIndex: index,
+        source,
+        translation: String(paragraph.translation || '').trim(),
+        start,
+        end: combined.length,
+      });
+    }
+
+    ranges.push({ pageIndex: index, start: pageStart, end: combined.length });
   }
 
   const endPage = ranges.length ? ranges[ranges.length - 1].pageIndex : safeStart;
-  const views = buildEbookViewsForText(combined).map((view) => ({
-    ...view,
-    startPage: pageIndexForOffset(ranges, view.start),
-    endPage: pageIndexForOffset(ranges, view.end, true),
-  }));
+  const { width, height } = getEbookReadingBox();
+  const views = buildEbookViewsForText(combined).map((view) => {
+    const owned = paragraphs.filter(
+      (paragraph) => paragraph.start >= view.start && paragraph.start < view.end,
+    );
+    const chosen = owned.length
+      ? owned
+      : paragraphs
+          .filter((paragraph) => paragraph.start < view.end && paragraph.end > view.start)
+          .slice(0, 1);
+    const translation = chosen
+      .map((paragraph) => paragraph.translation)
+      .filter(Boolean)
+      .join('\n\n');
+    const chapter = Boolean(
+      chosen.length &&
+        chosen[0].start === view.start &&
+        looksLikeChapterStart(chosen[0].source),
+    );
+
+    let translationFontSize = view.fontSize;
+    if (translation) {
+      while (
+        translationFontSize > 11 &&
+        measureEbookHeight(translation, translationFontSize, width) > height
+      ) {
+        translationFontSize -= 1;
+      }
+    }
+
+    return {
+      ...view,
+      startPage: pageIndexForOffset(ranges, view.start),
+      endPage: pageIndexForOffset(ranges, view.end, true),
+      translation,
+      translationFontSize,
+      chapter,
+    };
+  });
 
   return { startPage: safeStart, endPage, views };
 }
@@ -1383,7 +1444,7 @@ function previousEbookSegmentStart(startPage) {
   if (!startPage) return -1;
   const pages = state.ebook?.pages || [];
   for (let index = startPage - 1; index >= 0; index -= 1) {
-    if (looksLikeChapterStart(ebookPageText(pages[index]))) return index;
+    if (looksLikeChapterStart(ebookPageSourceText(pages[index]))) return index;
   }
   return 0;
 }
@@ -1441,10 +1502,7 @@ function renderEbookReader() {
   const pages = Array.isArray(book.pages) ? book.pages : [];
   state.ebookPage = Math.min(Math.max(state.ebookPage, 0), Math.max(pages.length - 1, 0));
 
-  if (
-    state.ebookViewsPage !== state.ebookPage ||
-    state.ebookViewsTranslated !== state.ebookShowTranslation
-  ) {
+  if (state.ebookViewsPage !== state.ebookPage) {
     rebuildEbookPageViews({ preserveProgress: true });
   }
 
@@ -1492,33 +1550,35 @@ function renderEbookReader() {
   }
 
   const view = state.ebookPageViews[state.ebookPart];
+  const translated = state.ebookShowTranslation;
+  const displayText = translated ? view?.translation : view?.text;
 
-  if (!view || !view.text) {
+  if (!view || !displayText) {
     container.style.fontSize = '22px';
     const statusText =
       page.status === 'pending'
         ? '这一页已排队，前面处理完就开始。'
         : page.status === 'processing'
           ? '正在识别并翻译这一页…'
-          : state.ebookShowTranslation
+          : translated
             ? '这一页还没有译文。'
             : '这一页没有识别出英文。';
     appendEbookParagraph(container, statusText, 'ebook-read-status');
     return;
   }
 
-  container.style.fontSize = `${view.fontSize}px`;
+  container.style.fontSize = `${
+    translated
+      ? view.translationFontSize || view.fontSize
+      : view.fontSize
+  }px`;
   container.style.lineHeight = String(view.lineHeight || 1.85);
   let paragraphIndex = 0;
-  for (const paragraph of view.text.split(/\n{2,}/)) {
+  for (const paragraph of displayText.split(/\n{2,}/)) {
     const text = paragraph.trim();
     if (!text) continue;
     const node = appendEbookParagraph(container, text);
-    if (
-      paragraphIndex === 0 &&
-      text.length < 80 &&
-      looksLikeChapterStart(text)
-    ) {
+    if (paragraphIndex === 0 && view.chapter) {
       node.classList.add('ebook-chapter-heading');
     }
     paragraphIndex += 1;
@@ -1633,33 +1693,7 @@ async function turnEbookView(direction) {
 function toggleEbookLanguage() {
   if (!state.ebook || state.ebookTurning) return;
 
-  const previous = state.ebookPageViews[state.ebookPart];
-  const anchorPage =
-    Number(state.ebookAnchorPage) ||
-    Number(previous?.startPage) ||
-    state.ebookPage;
-
   state.ebookShowTranslation = !state.ebookShowTranslation;
-  let segment = buildEbookSegmentViews(state.ebookPage);
-  let partIndex = segment.views.findIndex(
-    (view) => Number(view.startPage) === Number(anchorPage),
-  );
-
-  // If the anchored page only appears inside a wider screen, start a new
-  // segment exactly at that book page. This keeps the same page when the
-  // reader switches back and forth between English and Chinese.
-  if (partIndex < 0) {
-    state.ebookPage = anchorPage;
-    segment = buildEbookSegmentViews(anchorPage);
-    partIndex = 0;
-  }
-
-  state.ebookPageViews = segment.views;
-  state.ebookSegmentEnd = segment.endPage;
-  state.ebookPart = partIndex;
-  state.ebookViewsPage = state.ebookPage;
-  state.ebookViewsTranslated = state.ebookShowTranslation;
-
   renderEbookReader();
   saveEbookPosition();
 }
