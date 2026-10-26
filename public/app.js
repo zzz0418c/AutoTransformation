@@ -1729,7 +1729,7 @@ async function refreshEbookDetail(bookId, { keepPage = false } = {}) {
   scheduleEbookPoll();
 }
 
-async function importEbookFiles(bookId, files, { keepPage = false } = {}) {
+async function importEbookFiles(bookId, files, { keepPage = true } = {}) {
   if (state.ebookImporting) return;
   if (!files.length) return;
 
