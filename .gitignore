@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.local
+.cloud-access
 *.log
 npm-debug.log*
 .DS_Store

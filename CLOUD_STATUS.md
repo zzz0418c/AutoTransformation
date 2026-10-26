@@ -1,0 +1,86 @@
+# AutoTransformation 部署状态（2026-10-26）
+
+## 现在的访问方式
+
+平板/电脑直接打开：
+
+```text
+https://iz7xv11pgdwzf7rz8y7loiz.tail6020bc.ts.net/
+```
+
+首次打开需要带访问令牌：
+
+```text
+https://iz7xv11pgdwzf7rz8y7loiz.tail6020bc.ts.net/?token=<ACCESS_TOKEN>
+```
+
+完整带令牌的地址已经配置在平板 App 的「服务器」里，本地备份在：
+
+```text
+C:\Users\Philip\Documents\AutoTransformation\.cloud-access
+```
+
+服务端令牌在 `/opt/autotransformation/.env` 的 `ACCESS_TOKEN`。
+
+**平板不再需要打开 Tailscale。** 公网入口走 Tailscale Funnel，平板只走普通 HTTPS。
+
+## 架构
+
+```text
+平板/电脑
+  → https://iz7xv11pgdwzf7rz8y7loiz.tail6020bc.ts.net/   (Tailscale Funnel, HTTPS)
+  → http://127.0.0.1:8787                               (服务器本机 Node)
+  → DeepSeek API
+```
+
+- 服务器：阿里云轻量，Ubuntu 24.04，Node 22
+- 代码：`/opt/autotransformation`
+- 服务：`autotransformation.service`，只监听 `127.0.0.1:8787`
+- Tailscale：仅服务器端需要，用于 Funnel；平板不需要
+- Funnel：`tailscale funnel --bg http://127.0.0.1:8787`
+- 公网 80/8787 没有直接监听；所有公网流量从 Funnel 443 进来
+
+## 认证
+
+- 服务端 `ACCESS_TOKEN` 非空时启用令牌认证
+- 首次访问 `/?token=...`：服务端写入 HttpOnly cookie，然后 303 跳转到无令牌地址
+- API 也接受 `x-access-token` 或 `Authorization: Bearer ...`
+- 无令牌：页面 401，API 401
+- 已加回归测试：`tests/auth.test.js`；目前 `npm test` 34 项全过
+
+## 已验证
+
+- 平板 Tailscale 关闭，App 仍能打开 Funnel 首页
+- 平板翻译示例：2 段 / 71 词
+- `want` 语境义：`n.（旧义/正式）需要，缺少`
+- 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
+- 无令牌访问 401，带令牌页面/API 200
+
+## 常用命令
+
+```bash
+# 服务
+systemctl status autotransformation --no-pager
+systemctl restart autotransformation
+journalctl -u autotransformation -n 50 --no-pager
+
+# Funnel
+tailscale funnel status
+tailscale funnel --bg http://127.0.0.1:8787
+tailscale funnel --https=443 off   # 关闭公网入口
+
+# 证书（Funnel TLS 续期失败时）
+tailscale cert iz7xv11pgdwzf7rz8y7loiz.tail6020bc.ts.net
+
+# SSH
+ssh -i C:\Users\Philip\.ssh\at_cloud root@8.138.184.0
+```
+
+## 注意
+
+- Funnel 地址依赖 tailnet 节点名；如果改了机器名，地址会变。
+- 令牌如果泄露：改服务器 `.env` 的 `ACCESS_TOKEN`，重启服务，然后重新用新 token 打开一次 App。
+- 当前平板 Tailscale 已关闭，Always-on VPN 已清除；Tailscale App 还装着，但不再需要。
+- 仓库源码默认地址仍是 `127.0.0.1:8787`；平板当前安装的 App 里保存的是 Funnel 地址 + token，重装 App 后需要重新填。
+- 复习提醒的 `PUSH_URL`/systemd timer 仍未配置，需要 webhook 后再加。
+- DeepSeek Key 在服务器 `.env`，建议抽空轮换。

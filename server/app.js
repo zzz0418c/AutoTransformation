@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { HttpError, LlmError } from './lib/errors.js';
@@ -14,6 +15,25 @@ const defaultPublicDir = path.join(path.dirname(fileURLToPath(import.meta.url)),
 
 const asyncHandler = (handler) => (req, res, next) =>
   Promise.resolve(handler(req, res, next)).catch(next);
+
+function readCookie(header, name) {
+  for (const part of String(header ?? '').split(';')) {
+    const separator = part.indexOf('=');
+    if (separator === -1 || part.slice(0, separator).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+function tokensMatch(left, right) {
+  const a = Buffer.from(String(left ?? ''));
+  const b = Buffer.from(String(right ?? ''));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 function readString(value, field, { required = true, max = 2000 } = {}) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -121,6 +141,50 @@ export function createApp({ config, llm, store, publicDir = defaultPublicDir }) 
     );
     next();
   });
+
+  if (config.accessToken) {
+    app.use((req, res, next) => {
+      const queryToken = typeof req.query?.token === 'string' ? req.query.token : '';
+      const cookieToken = readCookie(req.headers.cookie, 'at_access');
+      const headerToken =
+        req.get('x-access-token') ||
+        String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+      const provided = queryToken || headerToken || cookieToken;
+
+      if (provided && tokensMatch(provided, config.accessToken)) {
+        if (queryToken && req.method === 'GET' && !req.path.startsWith('/api/')) {
+          res.cookie('at_access', config.accessToken, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: req.secure || req.get('x-forwarded-proto') === 'https',
+            maxAge: 365 * 24 * 60 * 60 * 1000,
+            path: '/',
+          });
+          const target = new URL(req.originalUrl, 'http://localhost');
+          target.searchParams.delete('token');
+          return res.redirect(303, `${target.pathname}${target.search}`);
+        }
+        return next();
+      }
+
+      if (req.path.startsWith('/api/')) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: '需要访问令牌。' },
+        });
+      }
+
+      return res
+        .status(401)
+        .type('html')
+        .send(
+          '<!doctype html><meta charset="utf-8"><title>需要访问令牌</title>' +
+            '<body style="font-family:serif;max-width:32rem;margin:12vh auto;padding:0 1.5rem;color:#2b2118">' +
+            '<h1 style="font-weight:500">需要访问令牌</h1>' +
+            '<p style="line-height:1.8;color:#6b5a49">请使用带访问令牌的完整地址打开这个页面。</p>' +
+            '</body>',
+        );
+    });
+  }
 
   app.use(express.json({ limit: '256kb' }));
 

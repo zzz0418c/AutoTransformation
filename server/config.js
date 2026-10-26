@@ -52,6 +52,7 @@ export function loadConfig(env = process.env) {
     demo,
     port: Number(env.PORT) || 8787,
     host: text(env.HOST, '127.0.0.1'),
+    accessToken: text(env.ACCESS_TOKEN, ''),
     timeoutMs: Number(env.LLM_TIMEOUT_MS) || 90_000,
     maxUploadMb: Number(env.MAX_UPLOAD_MB) || 12,
     bookContext: text(env.BOOK_CONTEXT, '19 世纪英国小说'),
