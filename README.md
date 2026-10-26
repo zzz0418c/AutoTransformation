@@ -39,11 +39,9 @@
 
 电子书数据保存在服务端 `data/ebooks.json`，原图在 `data/ebooks/<bookId>/`；仍然使用同一套模型配置和 API Key。
 
-![电子书封面](docs/at-cover-shelf2.png)
+![电子书封面](docs/at-cover-final.png)
 
 ![电子书分页阅读](docs/at-spacing.png)
-
-![电子书中文切换](docs/at-final-zh.png)
 
 ## 第一次使用：你要做的
 
