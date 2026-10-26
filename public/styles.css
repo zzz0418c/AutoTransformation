@@ -2110,10 +2110,6 @@ html:has(body.ebook-reading) {
   margin: 0 0 1.15em;
 }
 
-.ebook-read-text p:last-child {
-  margin-bottom: 0;
-}
-
 .ebook-read-text > :first-child {
   margin-top: auto;
 }
