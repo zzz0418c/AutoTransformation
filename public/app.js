@@ -1143,14 +1143,14 @@ function measureEbookHeight(text, fontSize, width, lineHeight = 2.08) {
 
 function chooseEbookLineHeight(text, fontSize, width, height) {
   const base = 2.08;
-  if (measureEbookHeight(text, fontSize, width, base) <= height * 0.93) {
+  if (measureEbookHeight(text, fontSize, width, base) <= height * 0.98) {
     let low = base;
-    let high = 2.55;
+    let high = 2.8;
     let best = base;
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const middle = (low + high) / 2;
-      if (measureEbookHeight(text, fontSize, width, middle) <= height * 0.97) {
+      if (measureEbookHeight(text, fontSize, width, middle) <= height * 0.985) {
         best = middle;
         low = middle;
       } else {
@@ -1294,14 +1294,11 @@ function buildEbookPageViews(page) {
     ? chunks
     : [{ text: text.trim(), start: 0, end: text.length }];
 
-  return safeChunks.map((chunk, index) => ({
+  return safeChunks.map((chunk) => ({
     ...chunk,
     pageLength: text.length,
     fontSize,
-    lineHeight:
-      index === safeChunks.length - 1
-        ? chooseEbookLineHeight(chunk.text, fontSize, width, height)
-        : 2.08,
+    lineHeight: chooseEbookLineHeight(chunk.text, fontSize, width, height),
   }));
 }
 
