@@ -1092,6 +1092,7 @@ function appendEbookParagraph(container, text, className = '') {
   if (className) paragraph.className = className;
   paragraph.textContent = text;
   container.append(paragraph);
+  return paragraph;
 }
 
 function ebookPageText(page) {
@@ -1134,7 +1135,7 @@ function getEbookMeasure() {
   return measure;
 }
 
-function measureEbookHeight(text, fontSize, width, lineHeight = 2.08) {
+function measureEbookHeight(text, fontSize, width, lineHeight = 1.85) {
   const measure = getEbookMeasure();
   measure.style.width = `${width}px`;
   measure.style.fontSize = `${fontSize}px`;
@@ -1149,52 +1150,6 @@ function measureEbookHeight(text, fontSize, width, lineHeight = 2.08) {
   }
 
   return measure.scrollHeight;
-}
-
-function chooseEbookLineHeight(text, fontSize, width, height) {
-  const base = 2.08;
-  if (measureEbookHeight(text, fontSize, width, base) <= height * 0.98) {
-    let low = base;
-    let high = 2.25;
-    let best = base;
-
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      const middle = (low + high) / 2;
-      if (measureEbookHeight(text, fontSize, width, middle) <= height * 0.985) {
-        best = middle;
-        low = middle;
-      } else {
-        high = middle;
-      }
-    }
-    return best;
-  }
-  return base;
-}
-
-function chooseEbookFontSize(text, width, height) {
-  const min = 16;
-  const max = Math.min(40, Math.max(26, Math.round(height / 12)));
-  if (!text) return max;
-
-  if (measureEbookHeight(text, max, width) <= height) return max;
-  if (measureEbookHeight(text, min, width) > height) return min;
-
-  let low = min;
-  let high = max;
-  let best = min;
-
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    if (measureEbookHeight(text, middle, width) <= height) {
-      best = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-
-  return best;
 }
 
 function paginateEbookText(text, fontSize, width, height) {
@@ -1291,75 +1246,76 @@ function balancedEbookChunks(text, count) {
   return chunks;
 }
 
+function ebookReaderFontSize(width) {
+  return Math.min(24, Math.max(17, Math.round(width / 34)));
+}
+
 function buildEbookViewsForText(text) {
   if (!String(text).trim()) {
-    return [{ text: '', start: 0, end: 0, pageLength: 0, fontSize: 24, empty: true }];
+    return [
+      {
+        text: '',
+        start: 0,
+        end: 0,
+        pageLength: 0,
+        fontSize: 20,
+        lineHeight: 1.85,
+        empty: true,
+      },
+    ];
   }
 
   const { width, height } = getEbookReadingBox();
-  let fontSize = chooseEbookFontSize(text, width, height);
+  const fontSize = ebookReaderFontSize(width);
+  const lineHeight = 1.85;
   let chunks = paginateEbookText(text, fontSize, width, height);
 
-  // A normal book page should not leave one word on a second screen. If the
-  // page is short enough, step the type down until the whole page fits once.
-  if (chunks.length > 1 && text.length <= 1400) {
-    for (let size = fontSize; size >= 16; size -= 1) {
-      if (measureEbookHeight(text, size, width) <= height) {
-        fontSize = size;
-        chunks = [{ text: text.trim(), start: 0, end: text.length }];
-        break;
-      }
-    }
-  }
-
-  // If greedy filling leaves a lone word or tiny tail, rebalance the whole
-  // page into equal-sized screens instead of shrinking just the tail.
-  if (chunks.length > 1) {
-    const minimumChunk = 30;
-    const hasTinyChunk = chunks.some(
-      (chunk, index) => index > 0 && chunk.text.length < minimumChunk,
+  // Fold a tiny tail into the previous page. If the combined text still does
+  // not fit, split just those two pages evenly instead of shrinking every page.
+  let guard = 0;
+  while (chunks.length > 1 && guard < 6) {
+    const tinyIndex = chunks.findIndex(
+      (chunk, index) => index > 0 && chunk.text.length < 30,
     );
+    if (tinyIndex < 0) break;
 
-    if (hasTinyChunk) {
-      let count = chunks.length;
-      let balancedFont = fontSize;
-      let balanced = balancedEbookChunks(text, count);
+    const left = chunks[tinyIndex - 1];
+    const right = chunks[tinyIndex];
+    const mergedText = `${left.text} ${right.text}`.trim();
 
-      for (let attempt = 0; attempt < 40; attempt += 1) {
-        const tallest = Math.max(
-          ...balanced.map((chunk) => measureEbookHeight(chunk.text, balancedFont, width)),
-        );
-        if (tallest <= height * 0.98) break;
-        if (balancedFont > 12) {
-          balancedFont -= 1;
-        } else if (count < chunks.length + 4) {
-          count += 1;
-          balanced = balancedEbookChunks(text, count);
-        } else {
-          break;
-        }
-      }
-
-      if (balanced.length) {
-        chunks = balanced;
-        fontSize = balancedFont;
-      }
+    if (measureEbookHeight(mergedText, fontSize, width) <= height) {
+      left.text = mergedText;
+      left.end = right.end;
+      chunks.splice(tinyIndex, 1);
+      guard += 1;
+      continue;
     }
+
+    const pair = balancedEbookChunks(mergedText, 2);
+    if (pair.length !== 2) break;
+    const tallest = Math.max(
+      ...pair.map((chunk) => measureEbookHeight(chunk.text, fontSize, width)),
+    );
+    if (tallest > height) break;
+
+    pair[0].start = left.start;
+    pair[0].end = left.start + pair[0].text.length;
+    pair[1].start = pair[0].end + 1;
+    pair[1].end = right.end;
+    chunks.splice(tinyIndex - 1, 2, ...pair);
+    break;
   }
 
   const safeChunks = chunks.length
     ? chunks
     : [{ text: text.trim(), start: 0, end: text.length }];
 
-  return safeChunks.map((chunk) => {
-    const chunkFontSize = chunk.fontSize ?? fontSize;
-    return {
-      ...chunk,
-      pageLength: text.length,
-      fontSize: chunkFontSize,
-      lineHeight: chooseEbookLineHeight(chunk.text, chunkFontSize, width, height),
-    };
-  });
+  return safeChunks.map((chunk) => ({
+    ...chunk,
+    pageLength: text.length,
+    fontSize,
+    lineHeight,
+  }));
 }
 
 function pageIndexForOffset(ranges, offset, atEnd = false) {
@@ -1539,10 +1495,16 @@ function renderEbookReader() {
   }
 
   container.style.fontSize = `${view.fontSize}px`;
-  container.style.lineHeight = String(view.lineHeight || 2.08);
+  container.style.lineHeight = String(view.lineHeight || 1.85);
+  let paragraphIndex = 0;
   for (const paragraph of view.text.split(/\n{2,}/)) {
     const text = paragraph.trim();
-    if (text) appendEbookParagraph(container, text);
+    if (!text) continue;
+    const node = appendEbookParagraph(container, text);
+    if (paragraphIndex === 0 && looksLikeChapterStart(text)) {
+      node.classList.add('ebook-chapter-heading');
+    }
+    paragraphIndex += 1;
   }
 
   if (surface) surface.scrollTop = 0;
