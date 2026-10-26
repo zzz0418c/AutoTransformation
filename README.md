@@ -40,6 +40,8 @@
 
 ![电子书全屏阅读](docs/at-fullscreen-en.png)
 
+![电子书横屏全屏](docs/at-fullscreen-land2.png)
+
 ## 第一次使用：你要做的
 
 1. **填配置**：把 `.env.example` 复制成 `.env`，填入模型 Key。推荐 DeepSeek Flash：一个 Key、一个模型同时管文字和图片。

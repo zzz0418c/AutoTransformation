@@ -70,6 +70,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
 - 无令牌访问 401，带令牌页面/API 200
 - 电子书真实书页 OCR/翻译成功；全屏英文/中文切换截图见 `docs/at-fullscreen-en.png`、`docs/at-fullscreen-zh.png`
+- 平板横屏全屏也正常；截图见 `docs/at-fullscreen-land2.png`
 
 ## 常用命令
 
