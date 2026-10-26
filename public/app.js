@@ -22,6 +22,11 @@ const state = {
   today: '',
   remindAt: '07:30',
   drawerTab: 'current',
+  ebooks: [],
+  ebook: null,
+  ebookPage: 0,
+  ebookPollTimer: null,
+  ebookImporting: false,
 };
 
 const steps = {
@@ -765,6 +770,577 @@ async function lookup(term, paragraphElement, start, end, rect) {
   }
 }
 
+/* ----------------------------------------------------------------- ebooks */
+
+const EBOOK_STATUS = {
+  empty: '空书',
+  processing: '翻译中',
+  done: '已完成',
+  error: '有错误',
+};
+
+function ebookStatusText(status) {
+  return EBOOK_STATUS[status] || '未知';
+}
+
+function ebookProgressText(book) {
+  if (!book.pageCount) return '还没有书页';
+  const parts = [`${book.doneCount}/${book.pageCount} 页已翻译`];
+  if (book.pendingCount) parts.push(`${book.pendingCount} 页处理中`);
+  if (book.errorCount) parts.push(`${book.errorCount} 页失败`);
+  return parts.join(' · ');
+}
+
+function stopEbookPoll() {
+  if (state.ebookPollTimer) {
+    window.clearTimeout(state.ebookPollTimer);
+    state.ebookPollTimer = null;
+  }
+}
+
+function scheduleEbookPoll() {
+  stopEbookPoll();
+  if ($('#ebooks').hidden) return;
+
+  const inReader = !$('#ebook-reader').hidden;
+  const pending =
+    inReader &&
+    Array.isArray(state.ebook?.pages) &&
+    state.ebook.pages.some(
+      (page) => page.status === 'pending' || page.status === 'processing',
+    );
+  const processingList =
+    !inReader && state.ebooks.some((book) => book.status === 'processing');
+
+  if (!pending && !processingList) return;
+
+  state.ebookPollTimer = window.setTimeout(async () => {
+    try {
+      if (inReader && state.ebook) {
+        const data = await getJson(`/api/ebooks/${state.ebook.id}`);
+        state.ebook = data.book;
+        if (!$('#ebook-reader').hidden) renderEbookReader();
+      } else if (!$('#ebooks').hidden) {
+        const data = await getJson('/api/ebooks');
+        state.ebooks = Array.isArray(data.books) ? data.books : [];
+        renderEbookLibrary();
+      }
+    } catch {
+      // Keep the last known state; the next poll can recover.
+    }
+    scheduleEbookPoll();
+  }, 1800);
+}
+
+async function loadEbooks({ quiet = false } = {}) {
+  try {
+    const data = await getJson('/api/ebooks');
+    state.ebooks = Array.isArray(data.books) ? data.books : [];
+    renderEbookLibrary();
+    scheduleEbookPoll();
+  } catch (error) {
+    if (!quiet) toast(error.message);
+  }
+}
+
+function createEbookCard(book) {
+  const card = document.createElement('article');
+  card.className = 'ebook-card';
+  card.dataset.ebookOpen = book.id;
+  card.tabIndex = 0;
+  card.setAttribute('role', 'button');
+  card.setAttribute('aria-label', `打开电子书 ${book.title}`);
+
+  const cover = document.createElement('div');
+  cover.className = 'ebook-cover';
+
+  if (book.coverPageId) {
+    const image = document.createElement('img');
+    image.loading = 'lazy';
+    image.alt = '';
+    image.src = `/api/ebooks/${encodeURIComponent(book.id)}/pages/${encodeURIComponent(
+      book.coverPageId,
+    )}/image`;
+    image.addEventListener('error', () => {
+      image.remove();
+      cover.prepend(createEbookFallback(book));
+    });
+    cover.append(image);
+  } else {
+    cover.append(createEbookFallback(book));
+  }
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'ebook-card-delete';
+  remove.dataset.ebookDelete = book.id;
+  remove.setAttribute('aria-label', `删除 ${book.title}`);
+  remove.textContent = '×';
+  cover.append(remove);
+
+  const body = document.createElement('div');
+  body.className = 'ebook-card-body';
+
+  const title = document.createElement('h3');
+  title.textContent = book.title || '未命名电子书';
+
+  const author = document.createElement('p');
+  author.className = 'ebook-card-author';
+  author.textContent = book.author || '未署名';
+
+  const meta = document.createElement('div');
+  meta.className = 'ebook-card-meta';
+
+  const pages = document.createElement('span');
+  pages.textContent = `${book.pageCount} 页 · ${book.doneCount}/${book.pageCount}`;
+
+  const status = document.createElement('span');
+  status.className = `ebook-status is-${book.status || 'empty'}`;
+  status.textContent = ebookStatusText(book.status);
+
+  meta.append(pages, status);
+
+  const progress = document.createElement('div');
+  progress.className = 'ebook-progress-bar';
+  const fill = document.createElement('span');
+  fill.style.width = `${Math.max(0, Math.min(100, Number(book.progress) || 0))}%`;
+  progress.append(fill);
+
+  body.append(title, author, meta, progress);
+  card.append(cover, body);
+
+  card.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.target.closest('[data-ebook-delete]')) return;
+    event.preventDefault();
+    openEbook(book.id);
+  });
+
+  return card;
+}
+
+function createEbookFallback(book) {
+  const fallback = document.createElement('div');
+  fallback.className = 'ebook-cover-fallback';
+  const initial = document.createElement('span');
+  initial.textContent = (book.title || '书').trim().slice(0, 1) || '书';
+  const title = document.createElement('strong');
+  title.textContent = book.title || '未命名电子书';
+  fallback.append(initial, title);
+  return fallback;
+}
+
+function renderEbookLibrary() {
+  const grid = $('#ebooks-grid');
+  grid.replaceChildren();
+
+  const books = state.ebooks;
+  const totalPages = books.reduce((sum, book) => sum + (Number(book.pageCount) || 0), 0);
+  const processing = books.filter((book) => book.status === 'processing').length;
+
+  $('#ebooks-empty').hidden = books.length > 0;
+  $('#ebooks-summary').textContent = books.length
+    ? `共 ${books.length} 本 · ${totalPages} 页${processing ? ` · ${processing} 本翻译中` : ''}`
+    : '';
+
+  for (const book of books) grid.append(createEbookCard(book));
+}
+
+async function openEbooks() {
+  closeCard();
+  closeDrawer();
+  $('#ebooks').hidden = false;
+  await showEbookLibrary();
+}
+
+function closeEbooks() {
+  stopEbookPoll();
+  $('#ebooks').hidden = true;
+  $('#ebooks').classList.remove('is-reading');
+  $('#ebook-modal').hidden = true;
+  $('#ebook-import').hidden = true;
+  state.ebook = null;
+}
+
+async function showEbookLibrary() {
+  stopEbookPoll();
+  state.ebook = null;
+  $('#ebooks').classList.remove('is-reading');
+  $('#ebook-reader').hidden = true;
+  $('#ebooks-library').hidden = false;
+  $('#ebooks-title').textContent = '我的书架';
+  renderEbookLibrary();
+  await loadEbooks();
+}
+
+async function openEbook(bookId, pageIndex = null) {
+  try {
+    const data = await getJson(`/api/ebooks/${bookId}`);
+    state.ebook = data.book;
+    const pages = state.ebook.pages || [];
+    const requested = pageIndex ?? state.ebook.lastPage ?? 0;
+    state.ebookPage = Math.min(Math.max(Number(requested) || 0, 0), Math.max(pages.length - 1, 0));
+
+    $('#ebooks-library').hidden = true;
+    $('#ebook-reader').hidden = false;
+    $('#ebooks').classList.add('is-reading');
+    renderEbookReader();
+    scheduleEbookPoll();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function renderEbookReader() {
+  const book = state.ebook;
+  if (!book) return;
+
+  const pages = Array.isArray(book.pages) ? book.pages : [];
+  state.ebookPage = Math.min(Math.max(state.ebookPage, 0), Math.max(pages.length - 1, 0));
+  const index = state.ebookPage;
+  const page = pages[index] || null;
+
+  $('#ebook-reader-title').textContent = book.title || '未命名电子书';
+  $('#ebook-reader-meta').textContent = [
+    book.author,
+    `${book.pageCount || pages.length} 页`,
+    ebookStatusText(book.status),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  $('#ebook-progress-fill').style.width = `${Math.max(
+    0,
+    Math.min(100, Number(book.progress) || 0),
+  )}%`;
+  $('#ebook-progress-text').textContent = ebookProgressText(book);
+
+  const statusElement = $('#ebook-page-status');
+  const retryButton = $('#ebook-retry');
+
+  if (!page) {
+    statusElement.hidden = true;
+    statusElement.classList.remove('is-error');
+    retryButton.hidden = true;
+    $('#ebook-page-image').hidden = true;
+    $('#ebook-page-image').removeAttribute('src');
+    $('#ebook-page-placeholder').hidden = false;
+    $('#ebook-page-placeholder').textContent =
+      '还没有书页。点右上角「添加书页」，可以一次选多张图片。';
+    $('#ebook-page-caption').textContent = '';
+    $('#ebook-translation-body').replaceChildren(
+      Object.assign(document.createElement('p'), {
+        className: 'ebook-empty-copy',
+        textContent: '书页导入后，会按顺序逐页识别和翻译。',
+      }),
+    );
+    $('#ebook-prev').disabled = true;
+    $('#ebook-next').disabled = true;
+    $('#ebook-page-indicator').textContent = '第 0 / 0 页';
+    $('#ebook-page-strip').replaceChildren();
+    return;
+  }
+
+  let pageStatus = '';
+  if (page.status === 'pending') pageStatus = '这一页已排队，前面的页面处理完后开始。';
+  if (page.status === 'processing') pageStatus = '正在识别并翻译这一页…';
+  if (page.status === 'error') {
+    pageStatus = `这一页处理失败：${page.error || '未知错误'}`;
+  }
+
+  statusElement.hidden = !pageStatus;
+  statusElement.textContent = pageStatus;
+  statusElement.classList.toggle('is-error', page.status === 'error');
+  retryButton.hidden = page.status !== 'error';
+
+  const image = $('#ebook-page-image');
+  const placeholder = $('#ebook-page-placeholder');
+
+  if (page.hasImage) {
+    image.hidden = false;
+    image.alt = `第 ${index + 1} 页原图`;
+    image.onerror = () => {
+      image.hidden = true;
+      placeholder.hidden = false;
+      placeholder.textContent = '原图加载失败，译文仍可阅读。';
+    };
+    image.src = `/api/ebooks/${encodeURIComponent(book.id)}/pages/${encodeURIComponent(
+      page.id,
+    )}/image?v=${encodeURIComponent(page.updatedAt || page.id)}`;
+    placeholder.hidden = true;
+  } else {
+    image.hidden = true;
+    image.removeAttribute('src');
+    placeholder.hidden = false;
+    placeholder.textContent =
+      page.sourceText ||
+      (page.status === 'processing'
+        ? '正在识别这一页…'
+        : page.status === 'error'
+          ? '这一页没有可用的原图。'
+          : '这一页还没有原图。');
+  }
+
+  $('#ebook-page-caption').textContent = `第 ${index + 1} 页`;
+
+  const body = $('#ebook-translation-body');
+  body.replaceChildren();
+
+  if (Array.isArray(page.paragraphs) && page.paragraphs.length) {
+    for (const paragraph of page.paragraphs) {
+      const line = document.createElement('p');
+      line.textContent = paragraph.translation || paragraph.source || '（这一页没有返回译文）';
+      body.append(line);
+    }
+  } else if (page.sourceText) {
+    const line = document.createElement('p');
+    line.className = 'ebook-empty-copy';
+    line.textContent = page.sourceText;
+    body.append(line);
+  } else {
+    const line = document.createElement('p');
+    line.className = page.status === 'error' ? 'ebook-error-copy' : 'ebook-empty-copy';
+    line.textContent =
+      page.status === 'error'
+        ? page.error || '这一页处理失败，可以点「重试本页」。'
+        : page.status === 'processing'
+          ? '正在识别并翻译这一页…'
+          : page.status === 'pending'
+            ? '这一页已排队，很快就会开始。'
+            : '这一页还没有译文。';
+    body.append(line);
+  }
+
+  if (page.status === 'error' && page.paragraphs?.length) {
+    const line = document.createElement('p');
+    line.className = 'ebook-error-copy';
+    line.textContent = `处理失败：${page.error || '未知错误'}`;
+    body.append(line);
+  }
+
+  $('#ebook-prev').disabled = index <= 0;
+  $('#ebook-next').disabled = index >= pages.length - 1;
+  $('#ebook-page-indicator').textContent = `第 ${index + 1} / ${pages.length} 页`;
+
+  const strip = $('#ebook-page-strip');
+  strip.replaceChildren();
+  pages.forEach((item, pageIndex) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `ebook-page-chip is-${item.status}${
+      pageIndex === index ? ' is-active' : ''
+    }`;
+    chip.dataset.ebookPage = String(pageIndex);
+    chip.textContent = String(pageIndex + 1);
+    chip.title = `第 ${pageIndex + 1} 页 · ${ebookStatusText(item.status)}`;
+    strip.append(chip);
+  });
+
+  window.requestAnimationFrame(() => {
+    strip.querySelector('.is-active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  });
+}
+
+function setEbookPage(index) {
+  if (!state.ebook) return;
+  const pages = state.ebook.pages || [];
+  if (!pages.length) return;
+
+  state.ebookPage = Math.min(Math.max(Number(index) || 0, 0), pages.length - 1);
+  renderEbookReader();
+  scheduleEbookPoll();
+
+  fetch(`/api/ebooks/${encodeURIComponent(state.ebook.id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lastPage: state.ebookPage }),
+  }).catch(() => {
+    // Reading progress is a convenience; a failed save should not interrupt.
+  });
+}
+
+function openEbookModal() {
+  $('#ebook-form').reset();
+  $('#ebook-context-input').value = state.bookContext || contextValue();
+  updateEbookFileNote();
+  $('#ebook-modal').hidden = false;
+  window.setTimeout(() => $('#ebook-title-input').focus(), 30);
+}
+
+function closeEbookModal() {
+  $('#ebook-modal').hidden = true;
+}
+
+function updateEbookFileNote() {
+  const files = Array.from($('#ebook-file-input').files || []);
+  $('#ebook-file-note').textContent = files.length
+    ? `${files.length} 张图片 · 将按选择顺序逐页识别和翻译`
+    : '未选择图片，也可以先创建空书。';
+}
+
+async function createEbookFromForm(event) {
+  event.preventDefault();
+
+  const title = $('#ebook-title-input').value.trim();
+  if (!title) {
+    toast('先给这本电子书起个名字。');
+    return;
+  }
+
+  const files = Array.from($('#ebook-file-input').files || []);
+  const button = $('#ebook-create');
+  button.disabled = true;
+  button.textContent = '创建中…';
+
+  try {
+    const data = await getJson('/api/ebooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        author: $('#ebook-author-input').value.trim(),
+        context: $('#ebook-context-input').value.trim(),
+      }),
+    });
+
+    const book = data.book;
+    closeEbookModal();
+    state.ebook = book;
+    state.ebookPage = 0;
+    $('#ebooks-library').hidden = true;
+    $('#ebook-reader').hidden = false;
+    $('#ebooks').classList.add('is-reading');
+    renderEbookReader();
+
+    if (files.length) {
+      await importEbookFiles(book.id, files);
+    } else {
+      toast('已创建空书。点「添加书页」导入图片。');
+      await refreshEbookDetail(book.id);
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = '创建并导入';
+  }
+}
+
+async function refreshEbookDetail(bookId, { keepPage = false } = {}) {
+  const previous = state.ebookPage;
+  const data = await getJson(`/api/ebooks/${bookId}`);
+  state.ebook = data.book;
+  const pages = state.ebook.pages || [];
+  state.ebookPage = keepPage
+    ? Math.min(Math.max(previous, 0), Math.max(pages.length - 1, 0))
+    : 0;
+  renderEbookReader();
+  scheduleEbookPoll();
+}
+
+async function importEbookFiles(bookId, files, { keepPage = false } = {}) {
+  if (state.ebookImporting) return;
+  if (!files.length) return;
+
+  const valid = [];
+  for (const file of files) {
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) continue;
+    if (file.size > state.maxUploadMb * 1024 * 1024) continue;
+    valid.push(file);
+  }
+
+  if (!valid.length) {
+    toast(`没有可导入的图片（仅支持 JPG/PNG/WebP，单张不超过 ${state.maxUploadMb} MB）。`);
+    return;
+  }
+
+  state.ebookImporting = true;
+  $('#ebook-import').hidden = false;
+  $('#ebook-import-fill').style.width = '0%';
+  $('#ebook-import-label').textContent = `正在导入 0 / ${valid.length} 页`;
+  $('#ebook-import-detail').textContent = '按选择顺序逐页上传…';
+
+  let failed = 0;
+  let lastError = '';
+
+  for (let index = 0; index < valid.length; index += 1) {
+    const file = valid[index];
+    $('#ebook-import-label').textContent = `正在导入 ${index + 1} / ${valid.length} 页`;
+    $('#ebook-import-detail').textContent = file.name || `第 ${index + 1} 页`;
+
+    try {
+      let prepared = file;
+      try {
+        prepared = await shrinkImage(file);
+      } catch {
+        // Fall back to the original image.
+      }
+
+      const form = new FormData();
+      form.append('image', prepared, prepared.name || `page-${index + 1}.jpg`);
+      await getJson(`/api/ebooks/${bookId}/pages`, { method: 'POST', body: form });
+    } catch (error) {
+      failed += 1;
+      lastError = error.message;
+    }
+
+    $('#ebook-import-fill').style.width = `${Math.round(((index + 1) / valid.length) * 100)}%`;
+  }
+
+  $('#ebook-import').hidden = true;
+  state.ebookImporting = false;
+
+  try {
+    await refreshEbookDetail(bookId, { keepPage });
+  } catch (error) {
+    toast(error.message);
+  }
+
+  if (failed) {
+    toast(`导入完成：${valid.length - failed} 页成功，${failed} 页失败。${lastError ? ` ${lastError}` : ''}`);
+  } else {
+    toast(`已导入 ${valid.length} 页，正在逐页翻译。`);
+  }
+}
+
+async function addEbookPages(files) {
+  if (!state.ebook || !files.length) return;
+  await importEbookFiles(state.ebook.id, files, { keepPage: true });
+}
+
+async function retryEbookPage() {
+  if (!state.ebook) return;
+  const page = state.ebook.pages?.[state.ebookPage];
+  if (!page) return;
+
+  const button = $('#ebook-retry');
+  button.disabled = true;
+  try {
+    await getJson(`/api/ebooks/${encodeURIComponent(state.ebook.id)}/pages/${encodeURIComponent(
+      page.id,
+    )}/retry`, { method: 'POST' });
+    await refreshEbookDetail(state.ebook.id, { keepPage: true });
+    toast('已重新排队，处理完会自动刷新。');
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteEbook(bookId) {
+  if (!bookId) return;
+  if (!window.confirm('删除这本电子书和它的所有书页？此操作不能撤销。')) return;
+
+  try {
+    await deleteRequest(`/api/ebooks/${encodeURIComponent(bookId)}`);
+    toast('电子书已删除');
+    await showEbookLibrary();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 /* ------------------------------------------------------------------ events */
 
 function bindEvents() {
@@ -921,6 +1497,21 @@ function bindEvents() {
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
 
+    if (!$('#ebook-modal').hidden) {
+      closeEbookModal();
+      return;
+    }
+
+    if (!$('#ebooks').hidden) {
+      if (state.ebookImporting) return;
+      if (!$('#ebook-reader').hidden) {
+        showEbookLibrary();
+        return;
+      }
+      closeEbooks();
+      return;
+    }
+
     if (!$('#notebook-drawer').hidden) {
       closeDrawer();
       return;
@@ -996,6 +1587,57 @@ function bindEvents() {
 
     lookup(term, english, start, end, rect);
   });
+
+  $('#ebooks-open').addEventListener('click', openEbooks);
+  $('#ebooks-close').addEventListener('click', closeEbooks);
+  $('#ebooks-close-2').addEventListener('click', closeEbooks);
+  $('#ebooks-new').addEventListener('click', openEbookModal);
+  $('#ebooks-empty-new').addEventListener('click', openEbookModal);
+  $('#ebooks-refresh').addEventListener('click', () => loadEbooks());
+
+  $('#ebook-modal-close').addEventListener('click', closeEbookModal);
+  $('#ebook-cancel').addEventListener('click', closeEbookModal);
+  $('#ebook-modal').addEventListener('click', (event) => {
+    if (event.target === $('#ebook-modal')) closeEbookModal();
+  });
+  $('#ebook-form').addEventListener('submit', createEbookFromForm);
+  $('#ebook-file-input').addEventListener('change', updateEbookFileNote);
+
+  $('#ebook-reader-back').addEventListener('click', showEbookLibrary);
+  $('#ebook-add').addEventListener('click', () => $('#ebook-add-input').click());
+  $('#ebook-add-input').addEventListener('change', async () => {
+    const input = $('#ebook-add-input');
+    const files = Array.from(input.files || []);
+    input.value = '';
+    await addEbookPages(files);
+  });
+
+  $('#ebook-prev').addEventListener('click', () => setEbookPage(state.ebookPage - 1));
+  $('#ebook-next').addEventListener('click', () => setEbookPage(state.ebookPage + 1));
+  $('#ebook-page-strip').addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const chip = event.target.closest('[data-ebook-page]');
+    if (!chip) return;
+    setEbookPage(Number(chip.dataset.ebookPage));
+  });
+  $('#ebook-retry').addEventListener('click', retryEbookPage);
+  $('#ebook-delete').addEventListener('click', () => {
+    if (state.ebook) deleteEbook(state.ebook.id);
+  });
+
+  $('#ebooks-grid').addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+
+    const remove = event.target.closest('[data-ebook-delete]');
+    if (remove) {
+      event.stopPropagation();
+      deleteEbook(remove.dataset.ebookDelete);
+      return;
+    }
+
+    const card = event.target.closest('[data-ebook-open]');
+    if (card) openEbook(card.dataset.ebookOpen);
+  });
 }
 
 /* ------------------------------------------------------------------- flow */
@@ -1068,5 +1710,8 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+
+window.openEbooks = openEbooks;
+window.closeEbooks = closeEbooks;
 
 init();

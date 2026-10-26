@@ -8,6 +8,8 @@ import { HttpError, LlmError } from './lib/errors.js';
 import { isDateOnly, todayInZone } from './lib/time.js';
 import { normalizeText, splitParagraphs } from './lib/text.js';
 import { buildIcs } from './ics.js';
+import { createEbookStore } from './ebook-store.js';
+import { createEbookWorker } from './ebook-worker.js';
 import { dueNotebooks } from './reminders.js';
 import { createStore, summarizeNotebook } from './store.js';
 
@@ -114,10 +116,13 @@ function sendDownload(res, filename, contentType, body) {
   res.send(body);
 }
 
-export function createApp({ config, llm, store, publicDir = defaultPublicDir }) {
+export function createApp({ config, llm, store, ebookStore, ebookWorker, publicDir = defaultPublicDir }) {
   const app = express();
   const notebooks =
     store ?? createStore({ dataDir: config.dataDir, timeZone: config.timeZone });
+  const ebooks = ebookStore ?? createEbookStore({ dataDir: config.dataDir });
+  const ebookJobs =
+    ebookWorker ?? createEbookWorker({ store: ebooks, llm, config });
 
   app.disable('x-powered-by');
 
@@ -270,10 +275,102 @@ export function createApp({ config, llm, store, publicDir = defaultPublicDir }) 
     }),
   );
 
+  app.get('/api/ebooks', (req, res) => {
+    res.json({ books: ebooks.list() });
+  });
+
+  app.post(
+    '/api/ebooks',
+    asyncHandler(async (req, res) => {
+      const title = readString(req.body?.title, '书名', { required: false, max: 120 });
+      const author = readString(req.body?.author, '作者', { required: false, max: 120 });
+      const context = readString(req.body?.context, '书籍背景', { required: false, max: 200 });
+      const book = ebooks.create({ title, author, context });
+      res.status(201).json({ book });
+    }),
+  );
+
+  app.get('/api/ebooks/:id/pages/:pageId/image', (req, res, next) => {
+    try {
+      const book = ebooks.get(req.params.id);
+      const page = book?.pages.find((item) => item.id === req.params.pageId);
+      if (!book || !page) throw new HttpError(404, '书页不存在。', 'not_found');
+      if (!page.hasImage) throw new HttpError(404, '这一页没有原图。', 'not_found');
+
+      const image = ebooks.readImage(book.id, page.id);
+      res
+        .type(image.mime)
+        .set('Cache-Control', 'private, max-age=31536000, immutable')
+        .send(image.buffer);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get(
+    '/api/ebooks/:id',
+    asyncHandler(async (req, res) => {
+      const book = ebooks.get(req.params.id);
+      if (!book) throw new HttpError(404, '电子书不存在。', 'not_found');
+      res.json({ book });
+    }),
+  );
+
+  app.post(
+    '/api/ebooks/:id/pages',
+    upload.single('image'),
+    asyncHandler(async (req, res) => {
+      if (!req.file) throw new HttpError(400, '请选择一张书页图片。');
+
+      const mime = detectImageType(req.file.buffer);
+      if (!mime) throw new HttpError(415, '只支持 JPG、PNG 或 WebP 图片。');
+
+      const result = ebooks.addPage(req.params.id, { buffer: req.file.buffer, mime });
+      ebookJobs.enqueue(req.params.id, result.page.id);
+      res.status(201).json(result);
+    }),
+  );
+
+  app.patch(
+    '/api/ebooks/:id',
+    asyncHandler(async (req, res) => {
+      const patch = {};
+      if (req.body?.title !== undefined) {
+        patch.title = readString(req.body.title, '书名', { required: false, max: 120 });
+      }
+      if (req.body?.author !== undefined) {
+        patch.author = readString(req.body.author, '作者', { required: false, max: 120 });
+      }
+      if (req.body?.context !== undefined) {
+        patch.context = readString(req.body.context, '书籍背景', { required: false, max: 200 });
+      }
+      if (req.body?.lastPage !== undefined) {
+        patch.lastPage = Number(req.body.lastPage) || 0;
+      }
+
+      const book = ebooks.updateBook(req.params.id, patch);
+      res.json({ book });
+    }),
+  );
+
+  app.delete('/api/ebooks/:id', (req, res) => {
+    ebooks.delete(req.params.id);
+    res.status(204).end();
+  });
+
+  app.post(
+    '/api/ebooks/:id/pages/:pageId/retry',
+    asyncHandler(async (req, res) => {
+      const { page } = ebooks.pageForWork(req.params.id, req.params.pageId);
+      ebooks.updatePage(req.params.id, req.params.pageId, { status: 'pending', error: '' });
+      ebookJobs.enqueue(req.params.id, req.params.pageId);
+      res.json({ page: { ...page, status: 'pending', error: '' } });
+    }),
+  );
+
   app.post(
     '/api/word',
-    asyncHandler(async (req, res) => {
-      const word = readString(req.body?.word, '单词', { max: 120 });
+    asyncHandler(async (req, res) => {      const word = readString(req.body?.word, '单词', { max: 120 });
       if (!/[A-Za-z]/.test(word)) throw new HttpError(400, '请选择一个英文单词或短语。');
 
       const sentence = readString(req.body?.sentence, '句子', { max: 800 });
@@ -456,6 +553,8 @@ export function createApp({ config, llm, store, publicDir = defaultPublicDir }) 
       error: { code: error.code || 'internal_error', message },
     });
   });
+
+  ebookJobs.recover?.();
 
   return app;
 }

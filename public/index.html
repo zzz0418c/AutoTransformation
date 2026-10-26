@@ -22,7 +22,10 @@
         <small>书页精读 · 整段翻译 · 点词双义</small>
       </span>
     </div>
-    <span id="mode-pill" class="pill">连接中…</span>
+    <div class="topbar-actions">
+      <button id="ebooks-open" class="ghost small topbar-ebook" type="button">电子书</button>
+      <span id="mode-pill" class="pill">连接中…</span>
+    </div>
   </header>
 
   <main id="main">
@@ -118,6 +121,118 @@
       <p class="read-hint">点击任意单词查看「语境义 / 常用义」；也可以划选一个短语。</p>
     </section>
   </main>
+
+  <section id="ebooks" class="ebooks" hidden aria-label="电子书">
+    <header class="ebooks-top">
+      <div class="ebooks-brand">
+        <button id="ebooks-close" class="ebooks-back" type="button" aria-label="返回书页翻译">←</button>
+        <div>
+          <p class="eyebrow">EBOOKS · YOUR SHELF</p>
+          <h1 id="ebooks-title">我的书架</h1>
+        </div>
+      </div>
+      <div class="ebooks-top-actions">
+        <button id="ebooks-new" class="primary small" type="button">新建电子书</button>
+        <button id="ebooks-refresh" class="ghost small" type="button">刷新</button>
+        <button id="ebooks-close-2" class="ghost small" type="button">返回</button>
+      </div>
+    </header>
+
+    <div id="ebooks-library" class="ebooks-library">
+      <p id="ebooks-summary" class="ebooks-summary"></p>
+      <div id="ebooks-grid" class="ebooks-grid"></div>
+      <div id="ebooks-empty" class="ebooks-empty" hidden>
+        <p class="eyebrow">A SHELF OF YOUR OWN</p>
+        <h2>还没有电子书</h2>
+        <p>把一本纸质书的书页逐批拍下来，导进来，系统会按顺序逐页识别、翻译，直到整本读完。</p>
+        <button id="ebooks-empty-new" class="primary" type="button">导入第一本</button>
+      </div>
+    </div>
+
+    <div id="ebook-reader" class="ebook-reader" hidden>
+      <header class="ebook-reader-head">
+        <button id="ebook-reader-back" class="ebooks-back" type="button" aria-label="返回书架">←</button>
+        <div class="ebook-reader-title">
+          <p class="eyebrow">READING</p>
+          <h2 id="ebook-reader-title">书名</h2>
+          <p id="ebook-reader-meta"></p>
+        </div>
+        <div class="ebook-reader-actions">
+          <button id="ebook-add" class="ghost small" type="button">添加书页</button>
+          <button id="ebook-retry" class="ghost small" type="button" hidden>重试本页</button>
+          <button id="ebook-delete" class="ghost small danger" type="button">删除</button>
+        </div>
+      </header>
+
+      <div class="ebook-progress">
+        <div class="ebook-progress-bar"><span id="ebook-progress-fill"></span></div>
+        <p id="ebook-progress-text"></p>
+      </div>
+
+      <p id="ebook-page-status" class="ebook-page-status" hidden></p>
+
+      <div class="ebook-spread">
+        <figure class="ebook-page-figure">
+          <img id="ebook-page-image" alt="书页原图" hidden>
+          <div id="ebook-page-placeholder" class="ebook-page-placeholder">这一页还在处理…</div>
+          <figcaption id="ebook-page-caption"></figcaption>
+        </figure>
+        <article class="ebook-translation">
+          <div id="ebook-translation-body" class="ebook-translation-body"></div>
+        </article>
+      </div>
+
+      <footer class="ebook-pager">
+        <button id="ebook-prev" class="ghost" type="button">上一页</button>
+        <span id="ebook-page-indicator" class="ebook-page-indicator">第 1 / 1 页</span>
+        <button id="ebook-next" class="ghost" type="button">下一页</button>
+      </footer>
+
+      <div id="ebook-page-strip" class="ebook-page-strip" aria-label="书页列表"></div>
+    </div>
+
+    <div id="ebook-import" class="ebook-import" hidden>
+      <div class="ebook-import-card">
+        <p id="ebook-import-label">正在导入…</p>
+        <div class="ebook-progress-bar"><span id="ebook-import-fill"></span></div>
+        <p id="ebook-import-detail"></p>
+      </div>
+    </div>
+  </section>
+
+  <div id="ebook-modal" class="ebook-modal" hidden>
+    <div class="ebook-modal-card" role="dialog" aria-modal="true" aria-labelledby="ebook-modal-title">
+      <button id="ebook-modal-close" class="card-close" type="button" aria-label="关闭">×</button>
+      <p class="eyebrow">NEW EBOOK</p>
+      <h2 id="ebook-modal-title">新建电子书</h2>
+      <p class="hint">一次可以选多张书页；系统会按选择顺序逐页识别、翻译。也可以先建空书，之后再补。</p>
+      <form id="ebook-form">
+        <label class="ebook-field">
+          书名
+          <input id="ebook-title-input" type="text" maxlength="120" placeholder="例如：Pride and Prejudice" required>
+        </label>
+        <label class="ebook-field">
+          作者 <span>可留空</span>
+          <input id="ebook-author-input" type="text" maxlength="120" placeholder="例如：Jane Austen">
+        </label>
+        <label class="ebook-field">
+          书籍背景 <span>会写进提示词</span>
+          <input id="ebook-context-input" type="text" maxlength="200" placeholder="例如：19 世纪英国小说">
+        </label>
+        <label class="ebook-file-label">
+          选择书页图片
+          <input id="ebook-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+        </label>
+        <p id="ebook-file-note" class="ebook-file-note">未选择图片，也可以先创建空书。</p>
+        <div class="actions compact">
+          <button id="ebook-create" class="primary" type="submit">创建并导入</button>
+          <button id="ebook-cancel" class="ghost" type="button">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <input id="ebook-add-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
 
   <footer class="footer">
     <span>AutoTransformation · 本地运行，API Key 不离开你的电脑</span>

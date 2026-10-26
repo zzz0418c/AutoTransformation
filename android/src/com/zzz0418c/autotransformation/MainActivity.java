@@ -112,6 +112,7 @@ public class MainActivity extends Activity {
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         header.addView(actionButton("刷新", v -> loadServer()));
         header.addView(actionButton("服务器", v -> showServerDialog()));
+        header.addView(actionButton("电子书", v -> openEbooks()));
 
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
 
@@ -255,6 +256,14 @@ public class MainActivity extends Activity {
         progressBar.setVisibility(View.VISIBLE);
         progressBar.setProgress(0);
         webView.loadUrl(serverUrl);
+    }
+
+    private void openEbooks() {
+        if (webView == null) return;
+        webView.evaluateJavascript(
+            "window.openEbooks ? window.openEbooks() : null",
+            null
+        );
     }
 
     private String normalizeServerUrl(String raw) {
