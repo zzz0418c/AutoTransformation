@@ -2424,9 +2424,54 @@ html:has(body.ebook-reading) {
 }
 
 .ebook-pages-note {
-  margin: 10px 0 14px;
+  margin: 10px 0 10px;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.ebook-page-jump {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.ebook-page-jump input {
+  width: 68px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.ebook-page-jump input:focus {
+  border-color: var(--accent);
+}
+
+.ebook-page-jump button {
+  height: 32px;
+  margin-left: auto;
+  padding: 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper-2);
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.ebook-page-jump button:hover,
+.ebook-page-jump button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .ebook-pages-list {
@@ -2445,6 +2490,13 @@ html:has(body.ebook-reading) {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--paper-2);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.ebook-page-row:hover {
+  border-color: var(--line-strong);
+  background: var(--paper);
 }
 
 .ebook-page-row.is-current {

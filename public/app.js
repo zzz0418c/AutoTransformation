@@ -1722,12 +1722,22 @@ function renderEbookPagesManager() {
 
   const pages = state.ebook.pages || [];
   const current = currentEbookPageIndex();
-  note.textContent = `共 ${pages.length} 页。删除后会同时删除原图、英文原文和中文译文，且不能撤销。`;
+  note.textContent = `共 ${pages.length} 页。点击任意一页跳转；删除页会同时删除原图、英文原文和中文译文，且不能撤销。`;
   list.replaceChildren();
+
+  const jumpInput = $('#ebook-page-jump-input');
+  if (jumpInput) {
+    jumpInput.max = String(Math.max(pages.length, 1));
+    jumpInput.placeholder = pages.length ? `1–${pages.length}` : '页码';
+  }
 
   pages.forEach((page, index) => {
     const row = document.createElement('div');
     row.className = 'ebook-page-row';
+    row.dataset.ebookPageJump = String(index);
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `跳转到第 ${index + 1} 页`);
     if (index === current) row.classList.add('is-current');
 
     const number = document.createElement('span');
@@ -1761,7 +1771,39 @@ function renderEbookPagesManager() {
 function openEbookPages() {
   if (!state.ebook) return;
   renderEbookPagesManager();
+  const input = $('#ebook-page-jump-input');
+  if (input) input.value = '';
   $('#ebook-pages-modal').hidden = false;
+}
+
+function jumpToEbookPage(pageIndex) {
+  if (!state.ebook) return;
+  const pages = state.ebook.pages || [];
+  if (!pages.length) return;
+
+  const target = Math.min(Math.max(Number(pageIndex) || 0, 0), pages.length - 1);
+  const viewIndex = state.ebookPageViews.findIndex((view) => {
+    const first = Number(view.startPage);
+    const last = Number(view.endPage);
+    return first <= target && target <= last;
+  });
+
+  if (viewIndex >= 0) {
+    state.ebookPart = viewIndex;
+  } else {
+    state.ebookPage = target;
+    const segment = buildEbookSegmentViews(target);
+    state.ebookPageViews = segment.views;
+    state.ebookSegmentEnd = segment.endPage;
+    state.ebookPart = 0;
+  }
+
+  state.ebookViewsPage = state.ebookPage;
+  state.ebookViewsTranslated = state.ebookShowTranslation;
+  closeEbookPages();
+  renderEbookReader();
+  saveEbookPosition();
+  toast(`已跳到第 ${target + 1} 页。`);
 }
 
 async function deleteEbookPage(pageId) {
@@ -2422,7 +2464,32 @@ function bindEvents() {
   $('#ebook-pages-list').addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
     const remove = event.target.closest('[data-ebook-page-delete]');
-    if (remove) deleteEbookPage(remove.dataset.ebookPageDelete);
+    if (remove) {
+      deleteEbookPage(remove.dataset.ebookPageDelete);
+      return;
+    }
+    const row = event.target.closest('[data-ebook-page-jump]');
+    if (row) jumpToEbookPage(Number(row.dataset.ebookPageJump));
+  });
+  $('#ebook-pages-list').addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest('[data-ebook-page-delete]')) return;
+    const row = event.target.closest('[data-ebook-page-jump]');
+    if (!row) return;
+    event.preventDefault();
+    jumpToEbookPage(Number(row.dataset.ebookPageJump));
+  });
+  $('#ebook-page-jump').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const input = $('#ebook-page-jump-input');
+    const value = Number(input.value);
+    const total = state.ebook?.pages?.length || 0;
+    if (!Number.isInteger(value) || value < 1 || value > total) {
+      toast(`请输入 1–${total || 1} 之间的页码。`);
+      return;
+    }
+    jumpToEbookPage(value - 1);
   });
 
   $('#ebook-read-text').addEventListener('click', (event) => {
