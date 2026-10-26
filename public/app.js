@@ -26,6 +26,7 @@ const state = {
   ebook: null,
   ebookPage: 0,
   ebookPart: 0,
+  ebookAnchorPage: 0,
   ebookSegmentEnd: 0,
   ebookPageViews: [],
   ebookViewsPage: -1,
@@ -1013,6 +1014,7 @@ function closeEbooks() {
   state.ebook = null;
   state.ebookShowTranslation = false;
   state.ebookPart = 0;
+  state.ebookAnchorPage = 0;
   state.ebookPageViews = [];
   state.ebookViewsPage = -1;
 }
@@ -1025,6 +1027,7 @@ async function showEbookLibrary() {
   state.ebook = null;
   state.ebookShowTranslation = false;
   state.ebookPart = 0;
+  state.ebookAnchorPage = 0;
   state.ebookPageViews = [];
   state.ebookViewsPage = -1;
   $('#ebooks').classList.remove('is-reading');
@@ -1060,6 +1063,8 @@ async function openEbook(bookId, pageIndex = null) {
       Math.max(Number(state.ebook.lastPart) || 0, 0),
       Math.max(state.ebookPageViews.length - 1, 0),
     );
+    state.ebookAnchorPage =
+      state.ebookPageViews[state.ebookPart]?.startPage ?? state.ebookPage;
     state.ebookViewsPage = state.ebookPage;
     state.ebookViewsTranslated = false;
 
@@ -1417,6 +1422,14 @@ function rebuildEbookPageViews({ preserveProgress = true } = {}) {
     Math.max(state.ebookPart, 0),
     Math.max(state.ebookPageViews.length - 1, 0),
   );
+
+  const anchor = Number(state.ebookAnchorPage);
+  const anchorVisible = state.ebookPageViews.some(
+    (view) => Number(view.startPage) <= anchor && anchor <= Number(view.endPage),
+  );
+  state.ebookAnchorPage = anchorVisible
+    ? anchor
+    : (state.ebookPageViews[state.ebookPart]?.startPage ?? state.ebookPage);
   state.ebookViewsPage = state.ebookPage;
   state.ebookViewsTranslated = state.ebookShowTranslation;
 }
@@ -1601,6 +1614,8 @@ async function turnEbookView(direction) {
   state.ebookPart = target.part;
   state.ebookPageViews = target.views;
   state.ebookSegmentEnd = target.segmentEnd ?? target.page;
+  state.ebookAnchorPage =
+    target.views[target.part]?.startPage ?? target.page;
   state.ebookViewsPage = target.page;
   state.ebookViewsTranslated = state.ebookShowTranslation;
   renderEbookReader();
@@ -1619,13 +1634,29 @@ function toggleEbookLanguage() {
   if (!state.ebook || state.ebookTurning) return;
 
   const previous = state.ebookPageViews[state.ebookPart];
-  const progress = previous?.pageLength ? previous.start / previous.pageLength : 0;
+  const anchorPage =
+    Number(state.ebookAnchorPage) ||
+    Number(previous?.startPage) ||
+    state.ebookPage;
 
   state.ebookShowTranslation = !state.ebookShowTranslation;
-  const segment = buildEbookSegmentViews(state.ebookPage);
+  let segment = buildEbookSegmentViews(state.ebookPage);
+  let partIndex = segment.views.findIndex(
+    (view) => Number(view.startPage) === Number(anchorPage),
+  );
+
+  // If the anchored page only appears inside a wider screen, start a new
+  // segment exactly at that book page. This keeps the same page when the
+  // reader switches back and forth between English and Chinese.
+  if (partIndex < 0) {
+    state.ebookPage = anchorPage;
+    segment = buildEbookSegmentViews(anchorPage);
+    partIndex = 0;
+  }
+
   state.ebookPageViews = segment.views;
   state.ebookSegmentEnd = segment.endPage;
-  state.ebookPart = findEbookPartForProgress(segment.views, progress);
+  state.ebookPart = partIndex;
   state.ebookViewsPage = state.ebookPage;
   state.ebookViewsTranslated = state.ebookShowTranslation;
 
@@ -1739,6 +1770,7 @@ function jumpToEbookPage(pageIndex) {
 
   state.ebookViewsPage = state.ebookPage;
   state.ebookViewsTranslated = state.ebookShowTranslation;
+  state.ebookAnchorPage = target;
   closeEbookPages();
   renderEbookReader();
   saveEbookPosition();
@@ -1777,6 +1809,7 @@ async function deleteEbookPage(pageId) {
     if (!$('#ebook-reader').hidden) {
       state.ebookPage = Math.min(pageIndex, remaining.length - 1);
       state.ebookPart = 0;
+      state.ebookAnchorPage = state.ebookPage;
       state.ebookPageViews = [];
       state.ebookViewsPage = -1;
       renderEbookReader();
@@ -1841,6 +1874,7 @@ async function createEbookFromForm(event) {
     state.ebook = book;
     state.ebookPage = 0;
     state.ebookPart = 0;
+    state.ebookAnchorPage = 0;
     state.ebookShowTranslation = false;
     state.ebookPageViews = [];
     state.ebookViewsPage = -1;
@@ -1885,6 +1919,8 @@ async function refreshEbookDetail(bookId, { keepPage = false } = {}) {
   state.ebookPart = keepPage
     ? Math.min(Math.max(previousPart, 0), Math.max(state.ebookPageViews.length - 1, 0))
     : 0;
+  state.ebookAnchorPage =
+    state.ebookPageViews[state.ebookPart]?.startPage ?? state.ebookPage;
   state.ebookViewsPage = state.ebookPage;
   state.ebookViewsTranslated = state.ebookShowTranslation;
   renderEbookReader();
@@ -1990,6 +2026,8 @@ async function startAddPages(bookId) {
       Math.max(Number(state.ebook.lastPart) || 0, 0),
       Math.max(state.ebookPageViews.length - 1, 0),
     );
+    state.ebookAnchorPage =
+      state.ebookPageViews[state.ebookPart]?.startPage ?? state.ebookPage;
     state.ebookViewsPage = state.ebookPage;
     state.ebookViewsTranslated = false;
     renderEbookReader();
