@@ -347,6 +347,9 @@ export function createApp({ config, llm, store, ebookStore, ebookWorker, publicD
       if (req.body?.lastPage !== undefined) {
         patch.lastPage = Number(req.body.lastPage) || 0;
       }
+      if (req.body?.lastPart !== undefined) {
+        patch.lastPart = Number(req.body.lastPart) || 0;
+      }
 
       const book = ebooks.updateBook(req.params.id, patch);
       res.json({ book });

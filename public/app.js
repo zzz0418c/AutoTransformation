@@ -25,6 +25,12 @@ const state = {
   ebooks: [],
   ebook: null,
   ebookPage: 0,
+  ebookPart: 0,
+  ebookPageViews: [],
+  ebookViewsPage: -1,
+  ebookViewsTranslated: false,
+  ebookTurning: false,
+  ebookResizeTimer: null,
   ebookShowTranslation: false,
   ebookPollTimer: null,
   ebookImporting: false,
@@ -824,11 +830,19 @@ function scheduleEbookPoll() {
   if (!pending && !processingList) return;
 
   state.ebookPollTimer = window.setTimeout(async () => {
+    if (state.ebookTurning) {
+      scheduleEbookPoll();
+      return;
+    }
+
     try {
       if (inReader && state.ebook) {
         const data = await getJson(`/api/ebooks/${state.ebook.id}`);
         state.ebook = data.book;
-        if (!$('#ebook-reader').hidden) renderEbookReader();
+        if (!$('#ebook-reader').hidden) {
+          rebuildEbookPageViews({ preserveProgress: true });
+          renderEbookReader();
+        }
       } else if (!$('#ebooks').hidden) {
         const data = await getJson('/api/ebooks');
         state.ebooks = Array.isArray(data.books) ? data.books : [];
@@ -976,19 +990,27 @@ async function openEbooks() {
 function closeEbooks() {
   stopEbookPoll();
   setNativeReaderMode(false);
+  document.body.classList.remove('ebook-reading');
   $('#ebooks').hidden = true;
   $('#ebooks').classList.remove('is-reading');
   $('#ebook-modal').hidden = true;
   $('#ebook-import').hidden = true;
   state.ebook = null;
   state.ebookShowTranslation = false;
+  state.ebookPart = 0;
+  state.ebookPageViews = [];
+  state.ebookViewsPage = -1;
 }
 
 async function showEbookLibrary() {
   stopEbookPoll();
   setNativeReaderMode(false);
+  document.body.classList.remove('ebook-reading');
   state.ebook = null;
   state.ebookShowTranslation = false;
+  state.ebookPart = 0;
+  state.ebookPageViews = [];
+  state.ebookViewsPage = -1;
   $('#ebooks').classList.remove('is-reading');
   $('#ebook-reader').hidden = true;
   $('#ebooks-library').hidden = false;
@@ -1005,11 +1027,24 @@ async function openEbook(bookId, pageIndex = null) {
     const requested = pageIndex ?? state.ebook.lastPage ?? 0;
     state.ebookPage = Math.min(Math.max(Number(requested) || 0, 0), Math.max(pages.length - 1, 0));
     state.ebookShowTranslation = false;
+    state.ebookPart = 0;
+    state.ebookPageViews = [];
+    state.ebookViewsPage = -1;
 
     $('#ebooks-library').hidden = true;
     $('#ebook-reader').hidden = false;
     $('#ebooks').classList.add('is-reading');
+    document.body.classList.add('ebook-reading');
     setNativeReaderMode(true);
+
+    state.ebookPageViews = buildEbookPageViews(pages[state.ebookPage]);
+    state.ebookPart = Math.min(
+      Math.max(Number(state.ebook.lastPart) || 0, 0),
+      Math.max(state.ebookPageViews.length - 1, 0),
+    );
+    state.ebookViewsPage = state.ebookPage;
+    state.ebookViewsTranslated = false;
+
     renderEbookReader();
     scheduleEbookPoll();
   } catch (error) {
@@ -1041,18 +1076,258 @@ function appendEbookParagraph(container, text, className = '') {
   container.append(paragraph);
 }
 
+function ebookPageText(page) {
+  const paragraphs = ebookPageParagraphs(page);
+  const key = state.ebookShowTranslation ? 'translation' : 'source';
+  return paragraphs
+    .map((paragraph) => paragraph[key])
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function getEbookReadingBox() {
+  const read = $('#ebook-read-text');
+  if (!read) return { width: 600, height: 600 };
+  const style = window.getComputedStyle(read);
+  const width = Math.max(
+    120,
+    read.clientWidth -
+      (Number.parseFloat(style.paddingLeft) || 0) -
+      (Number.parseFloat(style.paddingRight) || 0),
+  );
+  const height = Math.max(
+    160,
+    read.clientHeight -
+      (Number.parseFloat(style.paddingTop) || 0) -
+      (Number.parseFloat(style.paddingBottom) || 0),
+  );
+  return { width, height };
+}
+
+function getEbookMeasure() {
+  let measure = document.getElementById('ebook-measure');
+  if (!measure) {
+    measure = document.createElement('div');
+    measure.id = 'ebook-measure';
+    measure.className = 'ebook-measure';
+    measure.setAttribute('aria-hidden', 'true');
+    document.body.append(measure);
+  }
+  return measure;
+}
+
+function measureEbookHeight(text, fontSize, width) {
+  const measure = getEbookMeasure();
+  measure.style.width = `${width}px`;
+  measure.style.fontSize = `${fontSize}px`;
+  measure.replaceChildren();
+
+  for (const paragraph of String(text).split(/\n{2,}/)) {
+    if (!paragraph.trim()) continue;
+    const item = document.createElement('p');
+    item.textContent = paragraph;
+    measure.append(item);
+  }
+
+  return measure.scrollHeight;
+}
+
+function chooseEbookFontSize(text, width, height) {
+  const min = 17;
+  const max = Math.min(54, Math.max(26, Math.round(height / 12)));
+  if (!text) return max;
+
+  if (measureEbookHeight(text, max, width) <= height) return max;
+  if (measureEbookHeight(text, min, width) > height) return min;
+
+  let low = min;
+  let high = max;
+  let best = min;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (measureEbookHeight(text, middle, width) <= height) {
+      best = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return best;
+}
+
+function paginateEbookText(text, fontSize, width, height) {
+  const pages = [];
+  let offset = 0;
+
+  while (offset < text.length) {
+    let low = offset + 1;
+    let high = text.length;
+    let best = 0;
+
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      if (measureEbookHeight(text.slice(offset, middle), fontSize, width) <= height) {
+        best = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+
+    if (best <= offset) best = Math.min(text.length, offset + 1);
+
+    let end = best;
+    const slice = text.slice(offset, end);
+
+    const paragraphBreak = slice.lastIndexOf('\n\n');
+    if (paragraphBreak > slice.length * 0.6) {
+      end = offset + paragraphBreak;
+    } else {
+      const whitespace = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\n'));
+      if (whitespace > slice.length * 0.6) {
+        end = offset + whitespace;
+      } else {
+        let punctuation = -1;
+        for (const mark of '。！？；，.!?;') {
+          punctuation = Math.max(punctuation, slice.lastIndexOf(mark));
+        }
+        if (punctuation > slice.length * 0.6) end = offset + punctuation + 1;
+      }
+    }
+
+    if (end <= offset) end = best;
+
+    const chunk = text.slice(offset, end).trim();
+    if (chunk) pages.push({ text: chunk, start: offset, end });
+
+    offset = end;
+    while (offset < text.length && /\s/.test(text[offset])) offset += 1;
+  }
+
+  return pages;
+}
+
+function looksLikeChapterStart(text) {
+  const head = String(text || '').trimStart().slice(0, 80);
+  return (
+    /^(chapter|part|book|section|prologue|epilogue|contents|table of contents)\b/i.test(head) ||
+    /^第[一二三四五六七八九十百千万0-9]+[章节篇部]/.test(head)
+  );
+}
+
+function buildEbookPageViews(page) {
+  if (!page) return [];
+
+  const text = ebookPageText(page);
+  if (!text.trim()) {
+    return [{ text: '', start: 0, end: 0, pageLength: 0, fontSize: 24, empty: true }];
+  }
+
+  const { width, height } = getEbookReadingBox();
+  let fontSize = chooseEbookFontSize(text, width, height);
+  let chunks = paginateEbookText(text, fontSize, width, height);
+
+  // A normal book page should not leave one word on a second screen. If the
+  // page is short enough, step the type down until the whole page fits once.
+  if (chunks.length > 1 && text.length <= 1400) {
+    for (let size = fontSize; size >= 16; size -= 1) {
+      if (measureEbookHeight(text, size, width) <= height) {
+        fontSize = size;
+        chunks = [{ text: text.trim(), start: 0, end: text.length }];
+        break;
+      }
+    }
+  }
+
+  // Avoid leaving a single orphaned word on its own page: step the type down
+  // a little and use the first size whose final chunk is substantial.
+  if (chunks.length > 1) {
+    const minimumTail = Math.max(16, Math.floor(text.length * 0.04));
+    const tail = chunks[chunks.length - 1].text.length;
+    if (tail < minimumTail) {
+      const floor = Math.max(17, fontSize - 8);
+      for (let size = fontSize - 1; size >= floor; size -= 1) {
+        const candidate = paginateEbookText(text, size, width, height);
+        const candidateTail = candidate[candidate.length - 1]?.text.length || 0;
+        if (candidate.length < chunks.length || candidateTail >= minimumTail) {
+          fontSize = size;
+          chunks = candidate;
+          break;
+        }
+      }
+    }
+  }
+
+  const safeChunks = chunks.length
+    ? chunks
+    : [{ text: text.trim(), start: 0, end: text.length }];
+
+  return safeChunks.map((chunk) => ({
+    ...chunk,
+    pageLength: text.length,
+    fontSize,
+  }));
+}
+
+function findEbookPartForProgress(views, progress) {
+  if (!views.length) return 0;
+  const pageLength = views[0].pageLength || 0;
+  const target = Math.max(0, Math.min(1, progress)) * pageLength;
+  const index = views.findIndex((view) => view.end >= target);
+  return index < 0 ? views.length - 1 : index;
+}
+
+function rebuildEbookPageViews({ preserveProgress = true } = {}) {
+  if (!state.ebook) {
+    state.ebookPageViews = [];
+    state.ebookViewsPage = -1;
+    return;
+  }
+
+  const pages = state.ebook.pages || [];
+  state.ebookPage = Math.min(Math.max(state.ebookPage, 0), Math.max(pages.length - 1, 0));
+  const page = pages[state.ebookPage];
+  const previous = state.ebookPageViews[state.ebookPart];
+  const progress =
+    preserveProgress && previous?.pageLength
+      ? previous.start / previous.pageLength
+      : 0;
+
+  state.ebookPageViews = buildEbookPageViews(page);
+  state.ebookPart = preserveProgress
+    ? findEbookPartForProgress(state.ebookPageViews, progress)
+    : 0;
+  state.ebookPart = Math.min(
+    Math.max(state.ebookPart, 0),
+    Math.max(state.ebookPageViews.length - 1, 0),
+  );
+  state.ebookViewsPage = state.ebookPage;
+  state.ebookViewsTranslated = state.ebookShowTranslation;
+}
+
 function renderEbookReader() {
   const book = state.ebook;
   if (!book) return;
 
   const pages = Array.isArray(book.pages) ? book.pages : [];
   state.ebookPage = Math.min(Math.max(state.ebookPage, 0), Math.max(pages.length - 1, 0));
+
+  if (
+    state.ebookViewsPage !== state.ebookPage ||
+    state.ebookViewsTranslated !== state.ebookShowTranslation
+  ) {
+    rebuildEbookPageViews({ preserveProgress: true });
+  }
+
   const page = pages[state.ebookPage] || null;
   const container = $('#ebook-read-text');
   const toggle = $('#ebook-lang-toggle');
   const surface = $('#ebook-read-surface');
 
   container.replaceChildren();
+  container.style.fontSize = '';
   toggle.textContent = state.ebookShowTranslation ? 'English' : '中文';
   toggle.setAttribute(
     'aria-label',
@@ -1061,91 +1336,157 @@ function renderEbookReader() {
   toggle.setAttribute('aria-pressed', String(state.ebookShowTranslation));
 
   if (!page) {
+    container.style.fontSize = '24px';
     appendEbookParagraph(container, '还没有书页。', 'ebook-read-status');
     appendEbookParagraph(container, '先回到书架，给这本书添加书页。', 'ebook-read-status');
-    surface.scrollTop = 0;
     return;
   }
 
-  const paragraphs = ebookPageParagraphs(page);
-  const status = page.status;
-  const error = String(page.error || '').trim();
-
-  if (status === 'error') {
+  if (page.status === 'error') {
+    container.style.fontSize = '22px';
     appendEbookParagraph(
       container,
       state.ebookShowTranslation ? '这一页翻译失败。' : '这一页处理失败。',
       'ebook-read-status',
     );
-    if (error) appendEbookParagraph(container, error, 'ebook-read-error');
-
+    if (page.error) {
+      appendEbookParagraph(container, page.error, 'ebook-read-error');
+    }
     const retry = document.createElement('button');
     retry.type = 'button';
     retry.className = 'ebook-inline-retry';
     retry.dataset.ebookRetry = page.id;
     retry.textContent = '重试这一页';
     container.append(retry);
-    surface.scrollTop = 0;
     return;
   }
 
-  if (status === 'pending' || status === 'processing') {
-    appendEbookParagraph(
-      container,
-      status === 'pending' ? '这一页已排队，前面处理完就开始。' : '正在识别并翻译这一页…',
-      'ebook-read-status',
-    );
-    if (!state.ebookShowTranslation) {
-      for (const paragraph of paragraphs) {
-        if (paragraph.source) appendEbookParagraph(container, paragraph.source);
-      }
-    }
-    surface.scrollTop = 0;
+  const view = state.ebookPageViews[state.ebookPart];
+
+  if (!view || !view.text) {
+    container.style.fontSize = '22px';
+    const statusText =
+      page.status === 'pending'
+        ? '这一页已排队，前面处理完就开始。'
+        : page.status === 'processing'
+          ? '正在识别并翻译这一页…'
+          : state.ebookShowTranslation
+            ? '这一页还没有译文。'
+            : '这一页没有识别出英文。';
+    appendEbookParagraph(container, statusText, 'ebook-read-status');
     return;
   }
 
-  if (state.ebookShowTranslation) {
-    let translated = 0;
-    for (const paragraph of paragraphs) {
-      if (!paragraph.translation) continue;
-      translated += 1;
-      appendEbookParagraph(container, paragraph.translation);
-    }
-    if (!translated) {
-      appendEbookParagraph(container, '这一页还没有译文。', 'ebook-read-status');
-    }
-  } else {
-    let rendered = 0;
-    for (const paragraph of paragraphs) {
-      if (!paragraph.source) continue;
-      rendered += 1;
-      appendEbookParagraph(container, paragraph.source);
-    }
-    if (!rendered) {
-      appendEbookParagraph(container, '这一页没有识别出英文。', 'ebook-read-status');
-    }
+  container.style.fontSize = `${view.fontSize}px`;
+  for (const paragraph of view.text.split(/\n{2,}/)) {
+    const text = paragraph.trim();
+    if (text) appendEbookParagraph(container, text);
   }
 
-  surface.scrollTop = 0;
+  if (surface) surface.scrollTop = 0;
 }
-function setEbookPage(index) {
-  if (!state.ebook) return;
+
+function ebookTarget(direction) {
+  if (!state.ebook) return null;
   const pages = state.ebook.pages || [];
-  if (!pages.length) return;
+  if (!pages.length) return null;
 
-  state.ebookPage = Math.min(Math.max(Number(index) || 0, 0), pages.length - 1);
-  renderEbookReader();
-  scheduleEbookPoll();
+  if (direction > 0) {
+    if (state.ebookPart + 1 < state.ebookPageViews.length) {
+      return {
+        page: state.ebookPage,
+        part: state.ebookPart + 1,
+        views: state.ebookPageViews,
+      };
+    }
+    if (state.ebookPage + 1 < pages.length) {
+      const views = buildEbookPageViews(pages[state.ebookPage + 1]);
+      return { page: state.ebookPage + 1, part: 0, views };
+    }
+    return null;
+  }
 
+  if (state.ebookPart > 0) {
+    return {
+      page: state.ebookPage,
+      part: state.ebookPart - 1,
+      views: state.ebookPageViews,
+    };
+  }
+  if (state.ebookPage > 0) {
+    const views = buildEbookPageViews(pages[state.ebookPage - 1]);
+    return {
+      page: state.ebookPage - 1,
+      part: Math.max(views.length - 1, 0),
+      views,
+    };
+  }
+  return null;
+}
+
+function saveEbookPosition() {
+  if (!state.ebook) return;
   fetch(`/api/ebooks/${encodeURIComponent(state.ebook.id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lastPage: state.ebookPage }),
+    body: JSON.stringify({
+      lastPage: state.ebookPage,
+      lastPart: state.ebookPart,
+    }),
   }).catch(() => {
     // Reading progress is a convenience; a failed save should not interrupt.
   });
 }
 
+async function turnEbookView(direction) {
+  if (state.ebookTurning || !state.ebook) return;
+  const target = ebookTarget(direction);
+  if (!target) return;
+
+  state.ebookTurning = true;
+  const text = $('#ebook-read-text');
+  const outClass = direction > 0 ? 'is-out-next' : 'is-out-prev';
+  const inClass = direction > 0 ? 'is-in-next' : 'is-in-prev';
+
+  text.classList.remove('is-out-next', 'is-out-prev', 'is-in-next', 'is-in-prev');
+  void text.offsetWidth;
+  text.classList.add(outClass);
+
+  await new Promise((resolve) => window.setTimeout(resolve, 150));
+
+  state.ebookPage = target.page;
+  state.ebookPart = target.part;
+  state.ebookPageViews = target.views;
+  state.ebookViewsPage = target.page;
+  state.ebookViewsTranslated = state.ebookShowTranslation;
+  renderEbookReader();
+
+  text.classList.remove(outClass);
+  void text.offsetWidth;
+  text.classList.add(inClass);
+
+  await new Promise((resolve) => window.setTimeout(resolve, 220));
+  text.classList.remove(inClass);
+  state.ebookTurning = false;
+  saveEbookPosition();
+}
+
+function toggleEbookLanguage() {
+  if (!state.ebook || state.ebookTurning) return;
+
+  const previous = state.ebookPageViews[state.ebookPart];
+  const progress = previous?.pageLength ? previous.start / previous.pageLength : 0;
+
+  state.ebookShowTranslation = !state.ebookShowTranslation;
+  const page = state.ebook.pages?.[state.ebookPage];
+  state.ebookPageViews = buildEbookPageViews(page);
+  state.ebookPart = findEbookPartForProgress(state.ebookPageViews, progress);
+  state.ebookViewsPage = state.ebookPage;
+  state.ebookViewsTranslated = state.ebookShowTranslation;
+
+  renderEbookReader();
+  saveEbookPosition();
+}
 function openEbookModal() {
   $('#ebook-form').reset();
   $('#ebook-context-input').value = state.bookContext || contextValue();
@@ -1194,11 +1535,18 @@ async function createEbookFromForm(event) {
     closeEbookModal();
     state.ebook = book;
     state.ebookPage = 0;
+    state.ebookPart = 0;
     state.ebookShowTranslation = false;
+    state.ebookPageViews = [];
+    state.ebookViewsPage = -1;
     $('#ebooks-library').hidden = true;
     $('#ebook-reader').hidden = false;
     $('#ebooks').classList.add('is-reading');
+    document.body.classList.add('ebook-reading');
     setNativeReaderMode(true);
+    state.ebookPageViews = buildEbookPageViews(book.pages?.[0]);
+    state.ebookViewsPage = 0;
+    state.ebookViewsTranslated = false;
     renderEbookReader();
 
     if (files.length) {
@@ -1216,13 +1564,20 @@ async function createEbookFromForm(event) {
 }
 
 async function refreshEbookDetail(bookId, { keepPage = false } = {}) {
-  const previous = state.ebookPage;
+  const previousPage = state.ebookPage;
+  const previousPart = state.ebookPart;
   const data = await getJson(`/api/ebooks/${bookId}`);
   state.ebook = data.book;
   const pages = state.ebook.pages || [];
   state.ebookPage = keepPage
-    ? Math.min(Math.max(previous, 0), Math.max(pages.length - 1, 0))
+    ? Math.min(Math.max(previousPage, 0), Math.max(pages.length - 1, 0))
     : 0;
+  state.ebookPageViews = buildEbookPageViews(pages[state.ebookPage]);
+  state.ebookPart = keepPage
+    ? Math.min(Math.max(previousPart, 0), Math.max(state.ebookPageViews.length - 1, 0))
+    : 0;
+  state.ebookViewsPage = state.ebookPage;
+  state.ebookViewsTranslated = state.ebookShowTranslation;
   renderEbookReader();
   scheduleEbookPoll();
 }
@@ -1301,12 +1656,23 @@ async function startAddPages(bookId) {
       Math.max(Number(state.ebook.lastPage) || 0, 0),
       Math.max(pages.length - 1, 0),
     );
+    state.ebookPart = 0;
     state.ebookShowTranslation = false;
+    state.ebookPageViews = [];
+    state.ebookViewsPage = -1;
 
     $('#ebooks-library').hidden = true;
     $('#ebook-reader').hidden = false;
     $('#ebooks').classList.add('is-reading');
+    document.body.classList.add('ebook-reading');
     setNativeReaderMode(true);
+    state.ebookPageViews = buildEbookPageViews(pages[state.ebookPage]);
+    state.ebookPart = Math.min(
+      Math.max(Number(state.ebook.lastPart) || 0, 0),
+      Math.max(state.ebookPageViews.length - 1, 0),
+    );
+    state.ebookViewsPage = state.ebookPage;
+    state.ebookViewsTranslated = false;
     renderEbookReader();
     $('#ebook-add-input').click();
   } catch (error) {
@@ -1373,7 +1739,7 @@ function bindEbookSwipe() {
     start = null;
 
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-    setEbookPage(state.ebookPage + (dx < 0 ? 1 : -1));
+    turnEbookView(dx < 0 ? 1 : -1);
   }
 
   surface.addEventListener(
@@ -1489,6 +1855,15 @@ function bindEvents() {
 
   window.addEventListener('resize', () => {
     if (!$('#word-card').hidden) closeCard();
+
+    if (!$('#ebooks').hidden && !$('#ebook-reader').hidden) {
+      window.clearTimeout(state.ebookResizeTimer);
+      state.ebookResizeTimer = window.setTimeout(() => {
+        if ($('#ebook-reader').hidden || !state.ebook) return;
+        rebuildEbookPageViews({ preserveProgress: true });
+        renderEbookReader();
+      }, 180);
+    }
   });
 
   $('#edit-text').addEventListener('click', () => {
@@ -1572,7 +1947,7 @@ function bindEvents() {
       const tag = event.target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       event.preventDefault();
-      setEbookPage(state.ebookPage + (event.key === 'ArrowRight' ? 1 : -1));
+      turnEbookView(event.key === 'ArrowRight' ? 1 : -1);
       return;
     }
 
@@ -1691,10 +2066,7 @@ function bindEvents() {
     await addEbookPages(files);
   });
 
-  $('#ebook-lang-toggle').addEventListener('click', () => {
-    state.ebookShowTranslation = !state.ebookShowTranslation;
-    renderEbookReader();
-  });
+  $('#ebook-lang-toggle').addEventListener('click', toggleEbookLanguage);
 
   $('#ebook-read-text').addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
