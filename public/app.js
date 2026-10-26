@@ -1501,7 +1501,11 @@ function renderEbookReader() {
     const text = paragraph.trim();
     if (!text) continue;
     const node = appendEbookParagraph(container, text);
-    if (paragraphIndex === 0 && looksLikeChapterStart(text)) {
+    if (
+      paragraphIndex === 0 &&
+      text.length < 80 &&
+      looksLikeChapterStart(text)
+    ) {
       node.classList.add('ebook-chapter-heading');
     }
     paragraphIndex += 1;
