@@ -1749,6 +1749,7 @@ function saveEbookPosition() {
 
 async function turnEbookView(direction) {
   if (state.ebookTurning || !state.ebook) return;
+  if (!$('#word-card').hidden) closeCard();
   const target = ebookTarget(direction);
   if (!target) return;
 
@@ -1785,6 +1786,7 @@ async function turnEbookView(direction) {
 
 function toggleEbookLanguage() {
   if (!state.ebook || state.ebookTurning) return;
+  if (!$('#word-card').hidden) closeCard();
 
   state.ebookShowTranslation = !state.ebookShowTranslation;
   renderEbookReader();
