@@ -46,7 +46,19 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 首次访问 `/?token=...`：服务端写入 HttpOnly cookie，然后 303 跳转到无令牌地址
 - API 也接受 `x-access-token` 或 `Authorization: Bearer ...`
 - 无令牌：页面 401，API 401
-- 已加回归测试：`tests/auth.test.js`；目前 `npm test` 34 项全过
+- 已加回归测试：`tests/auth.test.js`；目前 `npm test` 36 项全过
+
+## 电子书（2026-10-26 新增）
+
+- 右上角「电子书」进入独立书架，不影响原来的单页翻译流程
+- 新建时一次选多张书页；Android 文件选择器已按 `multiple` 打开多选
+- 服务端按上传顺序逐页 OCR + 翻译，队列串行，避免并发打满模型接口
+- 书架显示封面、页数、进度；阅读器左图右译，支持翻页、页码条、续读
+- 「添加书页」可继续导入；失败页可重试；整本完成显示「已完成」
+- 数据：`data/ebooks.json`，原图：`data/ebooks/<bookId>/`
+- 实测：平板导入一张真实排版书页，OCR 与译文正确，状态 `done`
+- 平板 APK 已重装，原生顶栏有「电子书」按钮，多选文件选择器已生效
+- 测试用电子书已删除，书架恢复为空
 
 ## 已验证
 
@@ -55,6 +67,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - `want` 语境义：`n.（旧义/正式）需要，缺少`
 - 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
 - 无令牌访问 401，带令牌页面/API 200
+- 电子书真实书页 OCR/翻译成功；截图见 `docs/at-ebook-reader.png`
 
 ## 常用命令
 

@@ -214,7 +214,10 @@ public class MainActivity extends Activity {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("image/*");
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false);
+                intent.putExtra(
+                    Intent.EXTRA_ALLOW_MULTIPLE,
+                    params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE
+                );
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
                 try {
