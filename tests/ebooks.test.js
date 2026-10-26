@@ -88,6 +88,32 @@ test('ebooks import pages serially and expose translated pages', async () => {
     const bookId = created.body.book.id;
     assert.equal(created.body.book.pageCount, 0);
 
+    const notebook = await json(await fetch(`${base}/api/ebooks/${bookId}/notebook`));
+    assert.equal(notebook.status, 200);
+    assert.match(notebook.body.notebook.title, /Pride and Prejudice/);
+    const sameNotebook = await json(await fetch(`${base}/api/ebooks/${bookId}/notebook`));
+    assert.equal(sameNotebook.body.notebook.id, notebook.body.notebook.id);
+
+    const word = await json(
+      await fetch(`${base}/api/word`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          word: 'truth',
+          sentence: 'It is a truth universally acknowledged.',
+          paragraph: 'It is a truth universally acknowledged.',
+          context: '19 世纪英国小说',
+          notebookId: notebook.body.notebook.id,
+        }),
+      }),
+    );
+    assert.equal(word.status, 200);
+    assert.equal(word.body.notebookEntry.added, true);
+    const notebookAfter = await json(
+      await fetch(`${base}/api/notebooks/${notebook.body.notebook.id}`),
+    );
+    assert.equal(notebookAfter.body.notebook.entries.length, 1);
+
     for (let index = 0; index < 2; index += 1) {
       const bytes = index === 0 ? PNG : Buffer.concat([PNG, Buffer.from([0])]);
       const form = new FormData();

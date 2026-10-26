@@ -321,6 +321,28 @@ export function createApp({
     }),
   );
 
+  app.get('/api/ebooks/:id/notebook', (req, res, next) => {
+    try {
+      const book = ebooks.get(req.params.id);
+      if (!book) throw new HttpError(404, '电子书不存在。', 'not_found');
+
+      let notebook = book.notebookId ? notebooks.get(book.notebookId) : null;
+      if (!notebook) {
+        const source =
+          book.pages?.find((page) => page.sourceText)?.sourceText || '';
+        notebook = notebooks.create({
+          title: `${book.title} · 生词`,
+          source,
+        });
+        ebooks.updateBook(book.id, { notebookId: notebook.id });
+      }
+
+      res.json({ notebook });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/ebooks/:id/cover', (req, res, next) => {
     try {
       const image = ebooks.readCover(req.params.id);

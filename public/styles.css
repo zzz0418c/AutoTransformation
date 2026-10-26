@@ -562,8 +562,7 @@ textarea#source-text:focus {
 
 .word-card {
   position: fixed;
-  z-index: 60;
-  width: 392px;
+  z-index: 60;  width: 392px;
   max-width: calc(100vw - 24px);
   max-height: min(72vh, 580px);
   overflow: auto;
@@ -2305,6 +2304,18 @@ html:has(body.ebook-reading) {
   display: none;
 }
 
+body.ebook-reading .word-card {
+  z-index: 160;
+}
+
+body.ebook-reading #drawer-backdrop {
+  z-index: 165;
+}
+
+body.ebook-reading #notebook-drawer {
+  z-index: 170;
+}
+
 .ebook-reader-toolbar {
   position: fixed;
   left: 50%;
@@ -2329,7 +2340,8 @@ html:has(body.ebook-reading) {
 }
 
 .ebook-reader-toolbar .ebook-lang-toggle,
-.ebook-reader-toolbar .ebook-delete-page {
+.ebook-reader-toolbar .ebook-delete-page,
+.ebook-reader-toolbar .ebook-notebook {
   position: static;
   inset: auto;
   width: auto;
@@ -2354,17 +2366,34 @@ html:has(body.ebook-reading) {
   color: var(--muted);
 }
 
+.ebook-reader-toolbar .ebook-notebook {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
 .ebook-reader-toolbar .ebook-lang-toggle:hover,
 .ebook-reader-toolbar .ebook-lang-toggle:focus-visible,
 .ebook-reader-toolbar .ebook-delete-page:hover,
-.ebook-reader-toolbar .ebook-delete-page:focus-visible {
+.ebook-reader-toolbar .ebook-delete-page:focus-visible,
+.ebook-reader-toolbar .ebook-notebook:hover,
+.ebook-reader-toolbar .ebook-notebook:focus-visible {
   color: var(--accent-ink);
   background: var(--paper-2);
 }
 
-.ebook-reader-toolbar .ebook-delete-page svg {
+.ebook-reader-toolbar .ebook-delete-page svg,
+.ebook-reader-toolbar .ebook-notebook svg {
   width: 16px;
   height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .ebook-pages-modal {

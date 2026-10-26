@@ -60,6 +60,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 阅读器全屏只显示 OCR 英文；固定书籍字号/行距，正文从上方书页边距开始，左右版心居中；底部只保留一组「页面管理 / 中文」控制条
 - 相邻书页会连续排版；只有 `Chapter 1` 这类篇章页另起一页
 - 分页按段落自然断页，不再使用自动字号、自动行距或强制垂直居中
+- 英文阅读时点单词可查当前句中中文释义和常用义；每本电子书有独立生词本，点词自动收录，底部书本图标打开
 - 阅读器左下角「页面管理」可查看每页状态、摘要；点击任意页或输入页码可跳转；删除页会清理原图、英文和译文
 - 书架卡片「书页」按钮带书页图标
 - 阅读器不上下滚动：装不下的文字分到下一屏；只有 `Chapter 1` 这类篇章页另起一页
@@ -72,6 +73,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 实测：平板导入一张真实排版书页，OCR 与译文正确，状态 `done`
 - 平板 APK 已重装，原生顶栏有「电子书」按钮，多选文件选择器已生效
 - 测试书已删除，未触碰其他已有电子书；封面截图见 `docs/at-cover-final.png`，阅读截图见 `docs/at-book-layout.jpg`，页面管理/跳页见 `docs/at-page-manager.jpg`
+- 电子书点词释义见 `docs/at-ebook-word.jpg`
 
 ## 已验证
 
@@ -80,7 +82,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - `want` 语境义：`n.（旧义/正式）需要，缺少`
 - 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
 - 无令牌访问 401，带令牌页面/API 200
-- 电子书真实书页 OCR/翻译成功；封面、阅读排版与页面管理/跳页截图见 `docs/at-cover-final.png`、`docs/at-book-layout.jpg`、`docs/at-page-manager.jpg`
+- 电子书真实书页 OCR/翻译成功；封面、阅读排版、点词释义与页面管理截图见 `docs/at-cover-final.png`、`docs/at-book-layout.jpg`、`docs/at-ebook-word.jpg`、`docs/at-page-manager.jpg`
 - 封面源测试：Douban 成功，未知书名会生成 SVG 备用封面
 
 ## 常用命令

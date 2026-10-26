@@ -78,6 +78,7 @@ function summarize(book) {
     hasCover: Boolean(book.cover),
     lastPage: Math.min(Math.max(Number(book.lastPage) || 0, 0), Math.max(pages.length - 1, 0)),
     lastPart: Math.max(Number(book.lastPart) || 0, 0),
+    notebookId: book.notebookId || '',
     createdAt: book.createdAt,
     updatedAt: book.updatedAt,
   };
@@ -190,6 +191,7 @@ export function createEbookStore({ dataDir }) {
         lastPage: 0,
         lastPart: 0,
         cover: null,
+        notebookId: '',
         pages: [],
       };
       data.books.unshift(book);
@@ -299,6 +301,9 @@ export function createEbookStore({ dataDir }) {
       }
       if (patch.lastPart !== undefined) {
         book.lastPart = Math.max(Number(patch.lastPart) || 0, 0);
+      }
+      if (patch.notebookId !== undefined) {
+        book.notebookId = cleanText(patch.notebookId, 80);
       }
       book.updatedAt = new Date().toISOString();
       write(data);

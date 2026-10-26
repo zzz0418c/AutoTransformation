@@ -34,6 +34,9 @@ const state = {
   ebookTurning: false,
   ebookResizeTimer: null,
   ebookShowTranslation: false,
+  ebookNotebook: null,
+  ebookPreviousNotebook: null,
+  ebookNotebookSaved: false,
   ebookPollTimer: null,
   ebookImporting: false,
 };
@@ -735,9 +738,12 @@ function renderCardError(message, rect) {
   placeCard(rect);
 }
 
-async function lookup(term, paragraphElement, start, end, rect) {
+async function lookup(term, paragraphElement, start, end, rect, options = {}) {
   if (!paragraphElement) return;
 
+  const notebookId = options.notebookId ?? state.notebook?.id;
+  const onNotebookChange = options.onNotebookChange ?? null;
+  const context = options.context ?? contextValue();
   const plain = paragraphElement.dataset.plain || '';
   const sentence = sentenceAround(plain, start, end) || plain;
   const token = ++state.lookupToken;
@@ -752,8 +758,8 @@ async function lookup(term, paragraphElement, start, end, rect) {
         word: term,
         sentence,
         paragraph: plain,
-        context: contextValue(),
-        notebookId: state.notebook?.id,
+        context,
+        notebookId,
       }),
     });
 
@@ -769,7 +775,9 @@ async function lookup(term, paragraphElement, start, end, rect) {
       }
     }
 
-    if (state.notebook) {
+    if (onNotebookChange) {
+      await onNotebookChange();
+    } else if (state.notebook) {
       await refreshCurrentNotebook();
       await loadNotebooks();
     }
@@ -1002,11 +1010,22 @@ async function openEbooks() {
   await showEbookLibrary();
 }
 
+function restoreEbookNotebook() {
+  if (!state.ebookNotebookSaved) return;
+  closeDrawer();
+  state.notebook = state.ebookPreviousNotebook;
+  state.ebookNotebook = null;
+  state.ebookPreviousNotebook = null;
+  state.ebookNotebookSaved = false;
+  setNotebook(state.notebook);
+}
+
 function closeEbooks() {
   stopEbookPoll();
   setNativeReaderMode(false);
   document.body.classList.remove('ebook-reading');
   closeEbookPages();
+  restoreEbookNotebook();
   $('#ebooks').hidden = true;
   $('#ebooks').classList.remove('is-reading');
   $('#ebook-modal').hidden = true;
@@ -1024,6 +1043,7 @@ async function showEbookLibrary() {
   setNativeReaderMode(false);
   document.body.classList.remove('ebook-reading');
   closeEbookPages();
+  restoreEbookNotebook();
   state.ebook = null;
   state.ebookShowTranslation = false;
   state.ebookPart = 0;
@@ -1036,6 +1056,61 @@ async function showEbookLibrary() {
   $('#ebooks-title').textContent = '我的书架';
   renderEbookLibrary();
   await loadEbooks();
+}
+
+function updateEbookNotebookUI() {
+  const count = state.ebookNotebook?.entries?.length || 0;
+  const badge = $('#ebook-notebook-count');
+  if (badge) badge.textContent = String(count);
+}
+
+async function loadEbookNotebook() {
+  if (!state.ebook) return null;
+  const data = await getJson(
+    `/api/ebooks/${encodeURIComponent(state.ebook.id)}/notebook`,
+  );
+  state.ebookNotebook = data.notebook;
+  state.notebook = data.notebook;
+  setNotebook(data.notebook);
+  updateEbookNotebookUI();
+  return data.notebook;
+}
+
+async function refreshEbookNotebook() {
+  try {
+    await loadEbookNotebook();
+    await loadNotebooks();
+  } catch {
+    // The word card still works if the notebook refresh fails.
+  }
+}
+
+async function openEbookNotebook() {
+  if (!state.ebook) return;
+  if (!state.ebookNotebook) {
+    try {
+      await loadEbookNotebook();
+    } catch (error) {
+      toast(error.message);
+      return;
+    }
+  }
+  openDrawer('current');
+}
+
+async function prepareEbookNotebook() {
+  if (!state.ebookNotebookSaved) {
+    state.ebookPreviousNotebook = state.notebook;
+    state.ebookNotebookSaved = true;
+  }
+  state.ebookNotebook = null;
+  state.notebook = null;
+  updateEbookNotebookUI();
+  try {
+    await loadEbookNotebook();
+  } catch {
+    // Reading must still work if the vocabulary notebook cannot load.
+  }
 }
 
 async function openEbook(bookId, pageIndex = null) {
@@ -1055,6 +1130,8 @@ async function openEbook(bookId, pageIndex = null) {
     $('#ebooks').classList.add('is-reading');
     document.body.classList.add('ebook-reading');
     setNativeReaderMode(true);
+
+    await prepareEbookNotebook();
 
     const segment = buildEbookSegmentViews(state.ebookPage);
     state.ebookPageViews = segment.views;
@@ -1581,6 +1658,22 @@ function renderEbookReader() {
     if (paragraphIndex === 0 && view.chapter) {
       node.classList.add('ebook-chapter-heading');
     }
+    if (!translated) {
+      node.dataset.plain = text;
+      node.replaceChildren();
+      for (const token of tokenize(text)) {
+        if (token.type === 'text') {
+          node.appendChild(document.createTextNode(token.value));
+          continue;
+        }
+        const word = document.createElement('span');
+        word.className = 'w ebook-word';
+        word.textContent = token.value;
+        word.dataset.start = String(token.start);
+        word.dataset.end = String(token.end);
+        node.appendChild(word);
+      }
+    }
     paragraphIndex += 1;
   }
 
@@ -1917,6 +2010,7 @@ async function createEbookFromForm(event) {
     $('#ebooks').classList.add('is-reading');
     document.body.classList.add('ebook-reading');
     setNativeReaderMode(true);
+    await prepareEbookNotebook();
     const segment = buildEbookSegmentViews(0);
     state.ebookPageViews = segment.views;
     state.ebookSegmentEnd = segment.endPage;
@@ -2053,6 +2147,7 @@ async function startAddPages(bookId) {
     $('#ebooks').classList.add('is-reading');
     document.body.classList.add('ebook-reading');
     setNativeReaderMode(true);
+    await prepareEbookNotebook();
     const segment = buildEbookSegmentViews(state.ebookPage);
     state.ebookPageViews = segment.views;
     state.ebookSegmentEnd = segment.endPage;
@@ -2467,6 +2562,7 @@ function bindEvents() {
   });
 
   $('#ebook-lang-toggle').addEventListener('click', toggleEbookLanguage);
+  $('#ebook-notebook').addEventListener('click', openEbookNotebook);
   $('#ebook-delete-page').addEventListener('click', openEbookPages);
   $('#ebook-pages-close').addEventListener('click', closeEbookPages);
   $('#ebook-pages-modal').addEventListener('click', (event) => {
@@ -2505,6 +2601,29 @@ function bindEvents() {
 
   $('#ebook-read-text').addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
+
+    const word = event.target.closest('.ebook-word');
+    if (word && !state.ebookShowTranslation) {
+      event.stopPropagation();
+      const paragraphElement = word.closest('p');
+      const start = Number(word.dataset.start);
+      const end = Number(word.dataset.end);
+      if (!paragraphElement || !Number.isFinite(start) || !Number.isFinite(end)) {
+        return;
+      }
+
+      if (state.activeSpan) state.activeSpan.classList.remove('active');
+      state.activeSpan = word;
+      word.classList.add('active');
+
+      lookup(word.textContent, paragraphElement, start, end, word.getBoundingClientRect(), {
+        notebookId: state.ebookNotebook?.id,
+        context: state.ebook?.context || contextValue(),
+        onNotebookChange: refreshEbookNotebook,
+      });
+      return;
+    }
+
     if (event.target.closest('[data-ebook-retry]')) retryEbookPage();
   });
 
