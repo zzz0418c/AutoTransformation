@@ -16,7 +16,10 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.webkit.ConsoleMessage;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -45,9 +48,13 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private ProgressBar progressBar;
+    private LinearLayout headerBar;
+    private View headerDivider;
     private ValueCallback<Uri[]> fileCallback;
     private String serverUrl;
     private boolean errorDialogShown;
+    private boolean readerMode;
+    private int normalSystemUiVisibility;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,6 +68,7 @@ public class MainActivity extends Activity {
             flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         }
         window.getDecorView().setSystemUiVisibility(flags);
+        normalSystemUiVisibility = window.getDecorView().getSystemUiVisibility();
 
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         serverUrl = prefs.getString(KEY_SERVER, DEFAULT_SERVER);
@@ -98,27 +106,27 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(PAPER);
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(20), 0, dp(8), 0);
-        header.setBackgroundColor(PAPER);
+        headerBar = new LinearLayout(this);
+        headerBar.setOrientation(LinearLayout.HORIZONTAL);
+        headerBar.setGravity(Gravity.CENTER_VERTICAL);
+        headerBar.setPadding(dp(20), 0, dp(8), 0);
+        headerBar.setBackgroundColor(PAPER);
 
         TextView title = new TextView(this);
         title.setText("AutoTransformation");
         title.setTextColor(INK);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTypeface(Typeface.SERIF, Typeface.BOLD);
-        header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        header.addView(actionButton("刷新", v -> loadServer()));
-        header.addView(actionButton("服务器", v -> showServerDialog()));
-        header.addView(actionButton("电子书", v -> openEbooks()));
+        headerBar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        headerBar.addView(actionButton("刷新", v -> loadServer()));
+        headerBar.addView(actionButton("服务器", v -> showServerDialog()));
+        headerBar.addView(actionButton("电子书", v -> openEbooks()));
 
-        root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
+        root.addView(headerBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
 
-        View divider = new View(this);
-        divider.setBackgroundColor(LINE);
-        root.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
+        headerDivider = new View(this);
+        headerDivider.setBackgroundColor(LINE);
+        root.addView(headerDivider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setMax(100);
@@ -148,6 +156,7 @@ public class MainActivity extends Activity {
         settings.setUserAgentString(settings.getUserAgentString() + " AutoTransformationTablet/1.0");
 
         WebView.setWebContentsDebuggingEnabled(true);
+        webView.addJavascriptInterface(new ReaderBridge(), "AndroidShell");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -267,6 +276,80 @@ public class MainActivity extends Activity {
             "window.openEbooks ? window.openEbooks() : null",
             null
         );
+    }
+
+    private final class ReaderBridge {
+        @JavascriptInterface
+        public void setReaderMode(final boolean enabled) {
+            runOnUiThread(() -> applyReaderMode(enabled));
+        }
+    }
+
+    private void applyReaderMode(boolean enabled) {
+        readerMode = enabled;
+
+        if (headerBar != null) {
+            headerBar.setVisibility(enabled ? View.GONE : View.VISIBLE);
+        }
+        if (headerDivider != null) {
+            headerDivider.setVisibility(enabled ? View.GONE : View.VISIBLE);
+        }
+        if (enabled && progressBar != null) {
+            progressBar.setVisibility(View.GONE);
+        }
+
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                if (enabled) {
+                    controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    controller.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    );
+                } else {
+                    controller.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    int appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        appearance |= WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                    }
+                    controller.setSystemBarsAppearance(appearance, appearance);
+                }
+            }
+        } else {
+            View decor = window.getDecorView();
+            if (enabled) {
+                decor.setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                );
+            } else {
+                decor.setSystemUiVisibility(normalSystemUiVisibility);
+            }
+        }
+
+        if (!enabled) {
+            window.setStatusBarColor(PAPER);
+            window.setNavigationBarColor(PAPER);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (readerMode) {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "window.exitEbookReader ? window.exitEbookReader() : false",
+                    null
+                );
+            }
+            return;
+        }
+        super.onBackPressed();
     }
 
     private String normalizeServerUrl(String raw) {

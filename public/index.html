@@ -150,45 +150,10 @@
     </div>
 
     <div id="ebook-reader" class="ebook-reader" hidden>
-      <header class="ebook-reader-head">
-        <button id="ebook-reader-back" class="ebooks-back" type="button" aria-label="返回书架">←</button>
-        <div class="ebook-reader-title">
-          <p class="eyebrow">READING</p>
-          <h2 id="ebook-reader-title">书名</h2>
-          <p id="ebook-reader-meta"></p>
-        </div>
-        <div class="ebook-reader-actions">
-          <button id="ebook-add" class="ghost small" type="button">添加书页</button>
-          <button id="ebook-retry" class="ghost small" type="button" hidden>重试本页</button>
-          <button id="ebook-delete" class="ghost small danger" type="button">删除</button>
-        </div>
-      </header>
-
-      <div class="ebook-progress">
-        <div class="ebook-progress-bar"><span id="ebook-progress-fill"></span></div>
-        <p id="ebook-progress-text"></p>
+      <div id="ebook-read-surface" class="ebook-read-surface">
+        <div id="ebook-read-text" class="ebook-read-text"></div>
       </div>
-
-      <p id="ebook-page-status" class="ebook-page-status" hidden></p>
-
-      <div class="ebook-spread">
-        <figure class="ebook-page-figure">
-          <img id="ebook-page-image" alt="书页原图" hidden>
-          <div id="ebook-page-placeholder" class="ebook-page-placeholder">这一页还在处理…</div>
-          <figcaption id="ebook-page-caption"></figcaption>
-        </figure>
-        <article class="ebook-translation">
-          <div id="ebook-translation-body" class="ebook-translation-body"></div>
-        </article>
-      </div>
-
-      <footer class="ebook-pager">
-        <button id="ebook-prev" class="ghost" type="button">上一页</button>
-        <span id="ebook-page-indicator" class="ebook-page-indicator">第 1 / 1 页</span>
-        <button id="ebook-next" class="ghost" type="button">下一页</button>
-      </footer>
-
-      <div id="ebook-page-strip" class="ebook-page-strip" aria-label="书页列表"></div>
+      <button id="ebook-lang-toggle" class="ebook-lang-toggle" type="button" aria-label="切换中文翻译">中文</button>
     </div>
 
     <div id="ebook-import" class="ebook-import" hidden>

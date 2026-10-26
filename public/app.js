@@ -25,6 +25,7 @@ const state = {
   ebooks: [],
   ebook: null,
   ebookPage: 0,
+  ebookShowTranslation: false,
   ebookPollTimer: null,
   ebookImporting: false,
 };
@@ -798,6 +799,14 @@ function stopEbookPoll() {
   }
 }
 
+function setNativeReaderMode(enabled) {
+  try {
+    window.AndroidShell?.setReaderMode?.(Boolean(enabled));
+  } catch {
+    // The web build has no native shell; CSS already fills the viewport.
+  }
+}
+
 function scheduleEbookPoll() {
   stopEbookPoll();
   if ($('#ebooks').hidden) return;
@@ -906,12 +915,23 @@ function createEbookCard(book) {
   fill.style.width = `${Math.max(0, Math.min(100, Number(book.progress) || 0))}%`;
   progress.append(fill);
 
-  body.append(title, author, meta, progress);
+  const actions = document.createElement('div');
+  actions.className = 'ebook-card-actions';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'ebook-card-add';
+  add.dataset.ebookAdd = book.id;
+  add.textContent = '＋ 书页';
+  add.setAttribute('aria-label', `给 ${book.title} 添加书页`);
+  actions.append(add);
+
+  body.append(title, author, meta, progress, actions);
   card.append(cover, body);
 
   card.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     if (event.target.closest('[data-ebook-delete]')) return;
+    if (event.target.closest('[data-ebook-add]')) return;
     event.preventDefault();
     openEbook(book.id);
   });
@@ -955,16 +975,20 @@ async function openEbooks() {
 
 function closeEbooks() {
   stopEbookPoll();
+  setNativeReaderMode(false);
   $('#ebooks').hidden = true;
   $('#ebooks').classList.remove('is-reading');
   $('#ebook-modal').hidden = true;
   $('#ebook-import').hidden = true;
   state.ebook = null;
+  state.ebookShowTranslation = false;
 }
 
 async function showEbookLibrary() {
   stopEbookPoll();
+  setNativeReaderMode(false);
   state.ebook = null;
+  state.ebookShowTranslation = false;
   $('#ebooks').classList.remove('is-reading');
   $('#ebook-reader').hidden = true;
   $('#ebooks-library').hidden = false;
@@ -980,15 +1004,41 @@ async function openEbook(bookId, pageIndex = null) {
     const pages = state.ebook.pages || [];
     const requested = pageIndex ?? state.ebook.lastPage ?? 0;
     state.ebookPage = Math.min(Math.max(Number(requested) || 0, 0), Math.max(pages.length - 1, 0));
+    state.ebookShowTranslation = false;
 
     $('#ebooks-library').hidden = true;
     $('#ebook-reader').hidden = false;
     $('#ebooks').classList.add('is-reading');
+    setNativeReaderMode(true);
     renderEbookReader();
     scheduleEbookPoll();
   } catch (error) {
     toast(error.message);
   }
+}
+
+function ebookPageParagraphs(page) {
+  if (Array.isArray(page?.paragraphs) && page.paragraphs.length) {
+    return page.paragraphs
+      .map((item) => ({
+        source: String(item.source || '').trim(),
+        translation: String(item.translation || '').trim(),
+      }))
+      .filter((item) => item.source || item.translation);
+  }
+
+  return String(page?.sourceText || '')
+    .split(/\n{2,}/)
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .map((source) => ({ source, translation: '' }));
+}
+
+function appendEbookParagraph(container, text, className = '') {
+  const paragraph = document.createElement('p');
+  if (className) paragraph.className = className;
+  paragraph.textContent = text;
+  container.append(paragraph);
 }
 
 function renderEbookReader() {
@@ -997,150 +1047,87 @@ function renderEbookReader() {
 
   const pages = Array.isArray(book.pages) ? book.pages : [];
   state.ebookPage = Math.min(Math.max(state.ebookPage, 0), Math.max(pages.length - 1, 0));
-  const index = state.ebookPage;
-  const page = pages[index] || null;
+  const page = pages[state.ebookPage] || null;
+  const container = $('#ebook-read-text');
+  const toggle = $('#ebook-lang-toggle');
+  const surface = $('#ebook-read-surface');
 
-  $('#ebook-reader-title').textContent = book.title || '未命名电子书';
-  $('#ebook-reader-meta').textContent = [
-    book.author,
-    `${book.pageCount || pages.length} 页`,
-    ebookStatusText(book.status),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
-  $('#ebook-progress-fill').style.width = `${Math.max(
-    0,
-    Math.min(100, Number(book.progress) || 0),
-  )}%`;
-  $('#ebook-progress-text').textContent = ebookProgressText(book);
-
-  const statusElement = $('#ebook-page-status');
-  const retryButton = $('#ebook-retry');
+  container.replaceChildren();
+  toggle.textContent = state.ebookShowTranslation ? 'English' : '中文';
+  toggle.setAttribute(
+    'aria-label',
+    state.ebookShowTranslation ? '显示英文原文' : '显示中文翻译',
+  );
+  toggle.setAttribute('aria-pressed', String(state.ebookShowTranslation));
 
   if (!page) {
-    statusElement.hidden = true;
-    statusElement.classList.remove('is-error');
-    retryButton.hidden = true;
-    $('#ebook-page-image').hidden = true;
-    $('#ebook-page-image').removeAttribute('src');
-    $('#ebook-page-placeholder').hidden = false;
-    $('#ebook-page-placeholder').textContent =
-      '还没有书页。点右上角「添加书页」，可以一次选多张图片。';
-    $('#ebook-page-caption').textContent = '';
-    $('#ebook-translation-body').replaceChildren(
-      Object.assign(document.createElement('p'), {
-        className: 'ebook-empty-copy',
-        textContent: '书页导入后，会按顺序逐页识别和翻译。',
-      }),
-    );
-    $('#ebook-prev').disabled = true;
-    $('#ebook-next').disabled = true;
-    $('#ebook-page-indicator').textContent = '第 0 / 0 页';
-    $('#ebook-page-strip').replaceChildren();
+    appendEbookParagraph(container, '还没有书页。', 'ebook-read-status');
+    appendEbookParagraph(container, '先回到书架，给这本书添加书页。', 'ebook-read-status');
+    surface.scrollTop = 0;
     return;
   }
 
-  let pageStatus = '';
-  if (page.status === 'pending') pageStatus = '这一页已排队，前面的页面处理完后开始。';
-  if (page.status === 'processing') pageStatus = '正在识别并翻译这一页…';
-  if (page.status === 'error') {
-    pageStatus = `这一页处理失败：${page.error || '未知错误'}`;
+  const paragraphs = ebookPageParagraphs(page);
+  const status = page.status;
+  const error = String(page.error || '').trim();
+
+  if (status === 'error') {
+    appendEbookParagraph(
+      container,
+      state.ebookShowTranslation ? '这一页翻译失败。' : '这一页处理失败。',
+      'ebook-read-status',
+    );
+    if (error) appendEbookParagraph(container, error, 'ebook-read-error');
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'ebook-inline-retry';
+    retry.dataset.ebookRetry = page.id;
+    retry.textContent = '重试这一页';
+    container.append(retry);
+    surface.scrollTop = 0;
+    return;
   }
 
-  statusElement.hidden = !pageStatus;
-  statusElement.textContent = pageStatus;
-  statusElement.classList.toggle('is-error', page.status === 'error');
-  retryButton.hidden = page.status !== 'error';
-
-  const image = $('#ebook-page-image');
-  const placeholder = $('#ebook-page-placeholder');
-
-  if (page.hasImage) {
-    image.hidden = false;
-    image.alt = `第 ${index + 1} 页原图`;
-    image.onerror = () => {
-      image.hidden = true;
-      placeholder.hidden = false;
-      placeholder.textContent = '原图加载失败，译文仍可阅读。';
-    };
-    image.src = `/api/ebooks/${encodeURIComponent(book.id)}/pages/${encodeURIComponent(
-      page.id,
-    )}/image?v=${encodeURIComponent(page.updatedAt || page.id)}`;
-    placeholder.hidden = true;
-  } else {
-    image.hidden = true;
-    image.removeAttribute('src');
-    placeholder.hidden = false;
-    placeholder.textContent =
-      page.sourceText ||
-      (page.status === 'processing'
-        ? '正在识别这一页…'
-        : page.status === 'error'
-          ? '这一页没有可用的原图。'
-          : '这一页还没有原图。');
-  }
-
-  $('#ebook-page-caption').textContent = `第 ${index + 1} 页`;
-
-  const body = $('#ebook-translation-body');
-  body.replaceChildren();
-
-  if (Array.isArray(page.paragraphs) && page.paragraphs.length) {
-    for (const paragraph of page.paragraphs) {
-      const line = document.createElement('p');
-      line.textContent = paragraph.translation || paragraph.source || '（这一页没有返回译文）';
-      body.append(line);
+  if (status === 'pending' || status === 'processing') {
+    appendEbookParagraph(
+      container,
+      status === 'pending' ? '这一页已排队，前面处理完就开始。' : '正在识别并翻译这一页…',
+      'ebook-read-status',
+    );
+    if (!state.ebookShowTranslation) {
+      for (const paragraph of paragraphs) {
+        if (paragraph.source) appendEbookParagraph(container, paragraph.source);
+      }
     }
-  } else if (page.sourceText) {
-    const line = document.createElement('p');
-    line.className = 'ebook-empty-copy';
-    line.textContent = page.sourceText;
-    body.append(line);
+    surface.scrollTop = 0;
+    return;
+  }
+
+  if (state.ebookShowTranslation) {
+    let translated = 0;
+    for (const paragraph of paragraphs) {
+      if (!paragraph.translation) continue;
+      translated += 1;
+      appendEbookParagraph(container, paragraph.translation);
+    }
+    if (!translated) {
+      appendEbookParagraph(container, '这一页还没有译文。', 'ebook-read-status');
+    }
   } else {
-    const line = document.createElement('p');
-    line.className = page.status === 'error' ? 'ebook-error-copy' : 'ebook-empty-copy';
-    line.textContent =
-      page.status === 'error'
-        ? page.error || '这一页处理失败，可以点「重试本页」。'
-        : page.status === 'processing'
-          ? '正在识别并翻译这一页…'
-          : page.status === 'pending'
-            ? '这一页已排队，很快就会开始。'
-            : '这一页还没有译文。';
-    body.append(line);
+    let rendered = 0;
+    for (const paragraph of paragraphs) {
+      if (!paragraph.source) continue;
+      rendered += 1;
+      appendEbookParagraph(container, paragraph.source);
+    }
+    if (!rendered) {
+      appendEbookParagraph(container, '这一页没有识别出英文。', 'ebook-read-status');
+    }
   }
 
-  if (page.status === 'error' && page.paragraphs?.length) {
-    const line = document.createElement('p');
-    line.className = 'ebook-error-copy';
-    line.textContent = `处理失败：${page.error || '未知错误'}`;
-    body.append(line);
-  }
-
-  $('#ebook-prev').disabled = index <= 0;
-  $('#ebook-next').disabled = index >= pages.length - 1;
-  $('#ebook-page-indicator').textContent = `第 ${index + 1} / ${pages.length} 页`;
-
-  const strip = $('#ebook-page-strip');
-  strip.replaceChildren();
-  pages.forEach((item, pageIndex) => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = `ebook-page-chip is-${item.status}${
-      pageIndex === index ? ' is-active' : ''
-    }`;
-    chip.dataset.ebookPage = String(pageIndex);
-    chip.textContent = String(pageIndex + 1);
-    chip.title = `第 ${pageIndex + 1} 页 · ${ebookStatusText(item.status)}`;
-    strip.append(chip);
-  });
-
-  window.requestAnimationFrame(() => {
-    strip.querySelector('.is-active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  });
+  surface.scrollTop = 0;
 }
-
 function setEbookPage(index) {
   if (!state.ebook) return;
   const pages = state.ebook.pages || [];
@@ -1207,16 +1194,18 @@ async function createEbookFromForm(event) {
     closeEbookModal();
     state.ebook = book;
     state.ebookPage = 0;
+    state.ebookShowTranslation = false;
     $('#ebooks-library').hidden = true;
     $('#ebook-reader').hidden = false;
     $('#ebooks').classList.add('is-reading');
+    setNativeReaderMode(true);
     renderEbookReader();
 
     if (files.length) {
       await importEbookFiles(book.id, files);
     } else {
-      toast('已创建空书。点「添加书页」导入图片。');
-      await refreshEbookDetail(book.id);
+      toast('已创建空书。回到书架，用卡片上的「＋ 书页」导入图片。');
+      await showEbookLibrary();
     }
   } catch (error) {
     toast(error.message);
@@ -1303,6 +1292,28 @@ async function importEbookFiles(bookId, files, { keepPage = false } = {}) {
   }
 }
 
+async function startAddPages(bookId) {
+  try {
+    const data = await getJson(`/api/ebooks/${bookId}`);
+    state.ebook = data.book;
+    const pages = state.ebook.pages || [];
+    state.ebookPage = Math.min(
+      Math.max(Number(state.ebook.lastPage) || 0, 0),
+      Math.max(pages.length - 1, 0),
+    );
+    state.ebookShowTranslation = false;
+
+    $('#ebooks-library').hidden = true;
+    $('#ebook-reader').hidden = false;
+    $('#ebooks').classList.add('is-reading');
+    setNativeReaderMode(true);
+    renderEbookReader();
+    $('#ebook-add-input').click();
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
 async function addEbookPages(files) {
   if (!state.ebook || !files.length) return;
   await importEbookFiles(state.ebook.id, files, { keepPage: true });
@@ -1313,8 +1324,8 @@ async function retryEbookPage() {
   const page = state.ebook.pages?.[state.ebookPage];
   if (!page) return;
 
-  const button = $('#ebook-retry');
-  button.disabled = true;
+  const button = document.querySelector(`[data-ebook-retry="${page.id}"]`);
+  if (button) button.disabled = true;
   try {
     await getJson(`/api/ebooks/${encodeURIComponent(state.ebook.id)}/pages/${encodeURIComponent(
       page.id,
@@ -1324,7 +1335,7 @@ async function retryEbookPage() {
   } catch (error) {
     toast(error.message);
   } finally {
-    button.disabled = false;
+    if (button?.isConnected) button.disabled = false;
   }
 }
 
@@ -1339,6 +1350,64 @@ async function deleteEbook(bookId) {
   } catch (error) {
     toast(error.message);
   }
+}
+
+function bindEbookSwipe() {
+  const surface = $('#ebook-read-surface');
+  if (!surface) return;
+
+  let start = null;
+
+  function begin(x, y, target) {
+    if (!(target instanceof Element) || target.closest('button')) {
+      start = null;
+      return;
+    }
+    start = { x, y };
+  }
+
+  function finish(x, y) {
+    if (!start) return;
+    const dx = x - start.x;
+    const dy = y - start.y;
+    start = null;
+
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    setEbookPage(state.ebookPage + (dx < 0 ? 1 : -1));
+  }
+
+  surface.addEventListener(
+    'touchstart',
+    (event) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      begin(touch.clientX, touch.clientY, event.target);
+    },
+    { passive: true },
+  );
+
+  surface.addEventListener(
+    'touchend',
+    (event) => {
+      const touch = event.changedTouches[0];
+      if (touch) finish(touch.clientX, touch.clientY);
+    },
+    { passive: true },
+  );
+
+  surface.addEventListener('touchcancel', () => {
+    start = null;
+  });
+
+  surface.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'mouse') return;
+    begin(event.clientX, event.clientY, event.target);
+  });
+
+  surface.addEventListener('pointerup', (event) => {
+    if (event.pointerType !== 'mouse') return;
+    finish(event.clientX, event.clientY);
+  });
 }
 
 /* ------------------------------------------------------------------ events */
@@ -1495,6 +1564,18 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
+    if (
+      !$('#ebooks').hidden &&
+      !$('#ebook-reader').hidden &&
+      (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+    ) {
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      event.preventDefault();
+      setEbookPage(state.ebookPage + (event.key === 'ArrowRight' ? 1 : -1));
+      return;
+    }
+
     if (event.key !== 'Escape') return;
 
     if (!$('#ebook-modal').hidden) {
@@ -1603,8 +1684,6 @@ function bindEvents() {
   $('#ebook-form').addEventListener('submit', createEbookFromForm);
   $('#ebook-file-input').addEventListener('change', updateEbookFileNote);
 
-  $('#ebook-reader-back').addEventListener('click', showEbookLibrary);
-  $('#ebook-add').addEventListener('click', () => $('#ebook-add-input').click());
   $('#ebook-add-input').addEventListener('change', async () => {
     const input = $('#ebook-add-input');
     const files = Array.from(input.files || []);
@@ -1612,18 +1691,17 @@ function bindEvents() {
     await addEbookPages(files);
   });
 
-  $('#ebook-prev').addEventListener('click', () => setEbookPage(state.ebookPage - 1));
-  $('#ebook-next').addEventListener('click', () => setEbookPage(state.ebookPage + 1));
-  $('#ebook-page-strip').addEventListener('click', (event) => {
+  $('#ebook-lang-toggle').addEventListener('click', () => {
+    state.ebookShowTranslation = !state.ebookShowTranslation;
+    renderEbookReader();
+  });
+
+  $('#ebook-read-text').addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
-    const chip = event.target.closest('[data-ebook-page]');
-    if (!chip) return;
-    setEbookPage(Number(chip.dataset.ebookPage));
+    if (event.target.closest('[data-ebook-retry]')) retryEbookPage();
   });
-  $('#ebook-retry').addEventListener('click', retryEbookPage);
-  $('#ebook-delete').addEventListener('click', () => {
-    if (state.ebook) deleteEbook(state.ebook.id);
-  });
+
+  bindEbookSwipe();
 
   $('#ebooks-grid').addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
@@ -1632,6 +1710,13 @@ function bindEvents() {
     if (remove) {
       event.stopPropagation();
       deleteEbook(remove.dataset.ebookDelete);
+      return;
+    }
+
+    const add = event.target.closest('[data-ebook-add]');
+    if (add) {
+      event.stopPropagation();
+      startAddPages(add.dataset.ebookAdd);
       return;
     }
 
@@ -1713,5 +1798,10 @@ if ('serviceWorker' in navigator) {
 
 window.openEbooks = openEbooks;
 window.closeEbooks = closeEbooks;
+window.exitEbookReader = () => {
+  if ($('#ebooks').hidden || $('#ebook-reader').hidden) return false;
+  showEbookLibrary();
+  return true;
+};
 
 init();
