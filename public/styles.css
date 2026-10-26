@@ -1451,7 +1451,7 @@ body.drawer-open {
 
 .ebook-cover {
   position: relative;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 2 / 3;
   background: #2b2620;
   overflow: hidden;
 }

@@ -53,8 +53,10 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 右上角「电子书」进入独立书架，不影响原来的单页翻译流程
 - 新建时一次选多张书页；Android 文件选择器已按 `multiple` 打开多选
 - 服务端按上传顺序逐页 OCR + 翻译，队列串行，避免并发打满模型接口
-- 书架显示封面、页数、进度；阅读器全屏只显示 OCR 英文
-- 阅读器不上下滚动：按屏幕高度自动放大字号，装不下的文字分到下一屏；每张新书页和 `Chapter 1` 这类篇章页都另起一屏
+- 书架显示封面、页数、进度；新建时按书名从 Douban 匹配真实封面并保存到服务器，匹配不到则生成带书名/作者的排版封面
+- 旧书可通过 `POST /api/ebooks/:id/cover` 回填封面；当前《Pride and Prejudice》已回填真实封面
+- 阅读器全屏只显示 OCR 英文；底部留白已压缩，文字自动放大铺满可用高度
+- 阅读器不上下滚动：装不下的文字分到下一屏；每张新书页和 `Chapter 1` 这类篇章页都另起一屏
 - 右下角「中文 / English」切换译文，切换后保持当前书页/段落位置，不跳回页首
 - 左右滑动翻页，带 3D 书页翻转动画；无页码、无原图、无上一页/下一页按钮
 - 阅读位置记录 `lastPage + lastPart`，重新打开能回到上次的分页
@@ -63,7 +65,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 数据：`data/ebooks.json`，原图：`data/ebooks/<bookId>/`
 - 实测：平板导入一张真实排版书页，OCR 与译文正确，状态 `done`
 - 平板 APK 已重装，原生顶栏有「电子书」按钮，多选文件选择器已生效
-- 测试书已删除，未触碰其他已有电子书；截图见 `docs/at-final-p1.png`
+- 测试书已删除，未触碰其他已有电子书；封面截图见 `docs/at-cover-shelf2.png`，阅读截图见 `docs/at-spacing.png`
 
 ## 已验证
 
@@ -72,7 +74,8 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - `want` 语境义：`n.（旧义/正式）需要，缺少`
 - 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
 - 无令牌访问 401，带令牌页面/API 200
-- 电子书真实书页 OCR/翻译成功；分页英文/中文截图见 `docs/at-final-p1.png`、`docs/at-final-zh.png`
+- 电子书真实书页 OCR/翻译成功；封面匹配与分页阅读截图见 `docs/at-cover-shelf2.png`、`docs/at-spacing.png`
+- 封面源测试：Douban 成功，未知书名会生成 SVG 备用封面
 - 平板横屏全屏也正常；截图见 `docs/at-fullscreen-land2.png`
 
 ## 常用命令
