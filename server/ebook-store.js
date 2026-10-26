@@ -255,7 +255,7 @@ export function createEbookStore({ dataDir }) {
           // A missing source image must not block cleanup.
         }
       }
-      return { page: pageSummary(page, 0), book: summarize(book) };
+      return { page: pageSummary(page, 0), book: publicBook(book) };
     },
 
     findDuplicateText(bookId, pageId, sourceText) {

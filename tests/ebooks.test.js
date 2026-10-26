@@ -136,6 +136,16 @@ test('ebooks import pages serially and expose translated pages', async () => {
     assert.equal(list.body.books.length, 1);
     assert.equal(list.body.books[0].title, 'Pride and Prejudice');
     assert.equal(list.body.books[0].coverPageId, book.pages[0].id);
+
+    const removed = await json(
+      await fetch(`${base}/api/ebooks/${bookId}/pages/${book.pages[1].id}`, {
+        method: 'DELETE',
+      }),
+    );
+    assert.equal(removed.status, 200);
+    assert.equal(removed.body.book.pageCount, 1);
+    const afterDelete = await json(await fetch(`${base}/api/ebooks/${bookId}`));
+    assert.equal(afterDelete.body.book.pages[0].id, book.pages[0].id);
   });
 });
 

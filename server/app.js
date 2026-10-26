@@ -333,6 +333,14 @@ export function createApp({
     }
   });
 
+  app.delete('/api/ebooks/:id/pages/:pageId', (req, res, next) => {
+    try {
+      res.json(ebooks.deletePage(req.params.id, req.params.pageId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/ebooks/:id/pages/:pageId/image', (req, res, next) => {
     try {
       const book = ebooks.get(req.params.id);

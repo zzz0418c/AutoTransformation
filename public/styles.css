@@ -2253,6 +2253,189 @@ html:has(body.ebook-reading) {
   background: var(--paper-2);
 }
 
+.ebook-delete-page {
+  position: fixed;
+  left: max(22px, env(safe-area-inset-left));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 253, 247, 0.86);
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.ebook-delete-page svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ebook-delete-page:hover,
+.ebook-delete-page:focus-visible {
+  opacity: 1;
+  color: var(--accent-ink);
+  background: var(--paper-2);
+}
+
+.ebook-delete-page[hidden] {
+  display: none;
+}
+
+.ebook-pages-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(35, 30, 24, 0.34);
+  backdrop-filter: blur(4px);
+}
+
+.ebook-pages-modal[hidden] {
+  display: none;
+}
+
+.ebook-pages-card {
+  width: min(520px, 100%);
+  max-height: min(74vh, 680px);
+  display: flex;
+  flex-direction: column;
+  padding: 22px;
+  border-radius: 18px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  box-shadow: 0 24px 80px rgba(40, 30, 20, 0.24);
+}
+
+.ebook-pages-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ebook-pages-head .eyebrow {
+  margin: 0 0 4px;
+}
+
+.ebook-pages-head h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.5rem;
+}
+
+.ebook-pages-close {
+  border: 1px solid var(--line);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--paper-2);
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ebook-pages-note {
+  margin: 10px 0 14px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.ebook-pages-list {
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.ebook-page-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
+
+.ebook-page-row.is-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ebook-page-number {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ebook-page-copy {
+  min-width: 0;
+}
+
+.ebook-page-copy strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.ebook-page-copy p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--serif);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ebook-page-delete {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ebook-page-delete:hover,
+.ebook-page-delete:focus-visible {
+  color: #a23a2a;
+  background: rgba(162, 58, 42, 0.08);
+}
+
+.ebook-page-delete svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .ebook-card-actions {
   display: flex;
   align-items: center;
@@ -2261,6 +2444,9 @@ html:has(body.ebook-reading) {
 }
 
 .ebook-card-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 0;
   padding: 2px 0;
   background: transparent;
@@ -2268,6 +2454,16 @@ html:has(body.ebook-reading) {
   font-family: var(--sans);
   font-size: 0.74rem;
   cursor: pointer;
+}
+
+.ebook-card-add svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .ebook-card-add:hover {
