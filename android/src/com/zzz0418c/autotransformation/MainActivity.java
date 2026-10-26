@@ -338,20 +338,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    @Override
-    public void onBackPressed() {
-        if (readerMode) {
-            if (webView != null) {
-                webView.evaluateJavascript(
-                    "window.exitEbookReader ? window.exitEbookReader() : false",
-                    null
-                );
-            }
-            return;
-        }
-        super.onBackPressed();
-    }
-
     private String normalizeServerUrl(String raw) {
         String value = raw == null ? "" : raw.trim();
         if (value.isEmpty()) return null;
@@ -442,6 +428,15 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (readerMode) {
+            if (webView != null) {
+                webView.evaluateJavascript(
+                    "window.exitEbookReader ? window.exitEbookReader() : false",
+                    null
+                );
+            }
+            return;
+        }
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
         } else {

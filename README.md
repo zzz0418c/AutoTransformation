@@ -38,6 +38,8 @@
 
 电子书数据保存在服务端 `data/ebooks.json`，原图在 `data/ebooks/<bookId>/`；仍然使用同一套模型配置和 API Key。
 
+![电子书全屏阅读](docs/at-fullscreen-en.png)
+
 ## 第一次使用：你要做的
 
 1. **填配置**：把 `.env.example` 复制成 `.env`，填入模型 Key。推荐 DeepSeek Flash：一个 Key、一个模型同时管文字和图片。
