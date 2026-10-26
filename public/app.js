@@ -1615,64 +1615,6 @@ async function turnEbookView(direction) {
   saveEbookPosition();
 }
 
-function splitEbookViewsAtTarget(views, target) {
-  if (!views.length) return { views, index: 0 };
-
-  const index = views.findIndex((view) => view.end >= target);
-  if (index < 0) return { views, index: views.length - 1 };
-
-  const view = views[index];
-  const relative = Math.max(0, Math.min(view.text.length, target - view.start));
-  if (relative < 12 || relative > view.text.length - 12) {
-    return { views, index };
-  }
-
-  let split = view.text.indexOf('\n\n', relative);
-  if (split < 0) split = view.text.lastIndexOf('\n\n', relative);
-  if (split < 0) split = view.text.indexOf(' ', relative);
-  if (split < 0) split = view.text.lastIndexOf(' ', relative);
-  if (split <= 0 || split >= view.text.length - 2) {
-    return { views, index };
-  }
-
-  const firstText = view.text.slice(0, split).trimEnd();
-  const secondText = view.text.slice(split).trimStart();
-  if (!firstText || !secondText) return { views, index };
-
-  const first = {
-    ...view,
-    text: firstText,
-    end: view.start + firstText.length,
-  };
-
-  // Re-flow everything from the split point onward at this type size, so the
-  // page the reader lands on is full instead of being the short tail of the
-  // old layout.
-  const tailText = views
-    .slice(index + 1)
-    .map((item) => item.text)
-    .join('\n\n');
-  const restText = [secondText, tailText].filter(Boolean).join('\n\n');
-  const { width, height } = getEbookReadingBox();
-  const restChunks = paginateEbookText(
-    restText,
-    view.fontSize || 24,
-    width,
-    height,
-  );
-  const restViews = restChunks.map((chunk) => ({
-    ...view,
-    text: chunk.text,
-    start: view.start + split + chunk.start,
-    end: view.start + split + chunk.end,
-    pageLength: view.pageLength,
-    lineHeight: 2.08,
-  }));
-
-  const next = [...views.slice(0, index), first, ...restViews];
-  return { views: next, index: index + 1 };
-}
-
 function toggleEbookLanguage() {
   if (!state.ebook || state.ebookTurning) return;
 
@@ -1681,12 +1623,9 @@ function toggleEbookLanguage() {
 
   state.ebookShowTranslation = !state.ebookShowTranslation;
   const segment = buildEbookSegmentViews(state.ebookPage);
-  const views = segment.views;
-  const pageLength = views[0]?.pageLength || 0;
-  const split = splitEbookViewsAtTarget(views, progress * pageLength);
-  state.ebookPageViews = split.views;
+  state.ebookPageViews = segment.views;
   state.ebookSegmentEnd = segment.endPage;
-  state.ebookPart = split.index;
+  state.ebookPart = findEbookPartForProgress(segment.views, progress);
   state.ebookViewsPage = state.ebookPage;
   state.ebookViewsTranslated = state.ebookShowTranslation;
 
