@@ -5,13 +5,10 @@ import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { HttpError, LlmError } from './lib/errors.js';
-import { isDateOnly, todayInZone } from './lib/time.js';
 import { normalizeText, splitParagraphs } from './lib/text.js';
-import { buildIcs } from './ics.js';
 import { findBookCover } from './book-cover.js';
 import { createEbookStore } from './ebook-store.js';
 import { createEbookWorker } from './ebook-worker.js';
-import { dueNotebooks } from './reminders.js';
 import { createStore, summarizeNotebook } from './store.js';
 
 const defaultPublicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -66,7 +63,6 @@ function notebookMarkdown(notebook) {
     `# ${notebook.title}`,
     '',
     `- 创建：${notebook.createdAt}`,
-    `- 下次复习：${notebook.reviewDate ?? '未设置'}`,
     `- 词数：${notebook.entries.length}`,
     '',
   ];
@@ -207,8 +203,6 @@ export function createApp({
     limits: { fileSize: config.maxUploadMb * 1024 * 1024, files: 1 },
   });
 
-  const today = () => todayInZone(config.timeZone);
-
   function requireNotebook(id) {
     const notebook = notebooks.get(id);
     if (!notebook) throw new HttpError(404, '生词本不存在。', 'not_found');
@@ -222,9 +216,6 @@ export function createApp({
       visionModel: config.demo ? 'demo' : config.vision.model,
       bookContext: config.bookContext,
       maxUploadMb: config.maxUploadMb,
-      remindAt: config.remindAt,
-      timeZone: config.timeZone,
-      today: today(),
     });
   });
 
@@ -485,13 +476,8 @@ export function createApp({
   );
 
   app.get('/api/notebooks', (req, res) => {
-    const all = notebooks.list();
-    const date = today();
-
     res.json({
-      today: date,
-      notebooks: all.map(summarizeNotebook),
-      due: dueNotebooks(all, date, { includeNotified: true }).map(summarizeNotebook),
+      notebooks: notebooks.list().map(summarizeNotebook),
     });
   });
 
@@ -501,14 +487,6 @@ export function createApp({
     const notebook = notebooks.create({ title, source });
 
     res.status(201).json({ notebook });
-  });
-
-  app.get('/api/notebooks/export.ics', (req, res) => {
-    const ics = buildIcs(notebooks.list(), {
-      timeZone: config.timeZone,
-      remindAt: config.remindAt,
-    });
-    sendDownload(res, 'auto-transformation-reviews.ics', 'text/calendar', ics);
   });
 
   app.get('/api/notebooks/export/vocabcurve.txt', (req, res) => {
@@ -523,15 +501,6 @@ export function createApp({
   app.get('/manifest.webmanifest', (req, res) => {
     res.type('application/manifest+json');
     res.sendFile(path.join(publicDir, 'manifest.webmanifest'));
-  });
-
-  app.get('/api/notebooks/:id/export.ics', (req, res) => {
-    const notebook = requireNotebook(req.params.id);
-    const ics = buildIcs([notebook], {
-      timeZone: config.timeZone,
-      remindAt: config.remindAt,
-    });
-    sendDownload(res, `auto-transformation-${notebook.id}.ics`, 'text/calendar', ics);
   });
 
   app.get('/api/notebooks/:id/export.md', (req, res) => {
@@ -555,16 +524,6 @@ export function createApp({
 
     if (Object.hasOwn(body, 'title')) {
       patch.title = readString(body.title, '标题', { max: 120 });
-    }
-
-    if (Object.hasOwn(body, 'reviewDate')) {
-      if (body.reviewDate === null || body.reviewDate === '') {
-        patch.reviewDate = null;
-      } else {
-        const value = readString(body.reviewDate, '复习日期', { max: 10 });
-        if (!isDateOnly(value)) throw new HttpError(400, '复习日期格式应为 YYYY-MM-DD。');
-        patch.reviewDate = value;
-      }
     }
 
     res.json({ notebook: notebooks.update(notebook.id, patch) });

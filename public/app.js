@@ -18,9 +18,6 @@ const state = {
   lastSelectionAt: 0,
   notebook: null,
   notebooks: [],
-  due: [],
-  today: '',
-  remindAt: '07:30',
   drawerTab: 'current',
   ebooks: [],
   ebook: null,
@@ -119,22 +116,6 @@ function storeContext(value) {
   }
 }
 
-function formatDateCn(date) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || '');
-  if (!match) return date || '';
-  return `${Number(match[2])}月${Number(match[3])}日`;
-}
-
-function dayNumber(date) {
-  const [year, month, day] = date.split('-').map(Number);
-  return Date.UTC(year, month - 1, day);
-}
-
-function daysBetween(from, to) {
-  if (!from || !to) return 0;
-  return Math.round((dayNumber(to) - dayNumber(from)) / 86_400_000);
-}
-
 function formatDateTime(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
@@ -144,14 +125,6 @@ function formatDateTime(iso) {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function reviewHint(date) {
-  if (!date) return '选一个日期。当天会出现在日历里，也可以推送到微信。';
-
-  const diff = daysBetween(state.today, date);
-  const when = diff === 0 ? '今天' : diff > 0 ? `还有 ${diff} 天` : `已逾期 ${-diff} 天`;
-  return `${when} · ${state.remindAt} 提醒（.ics 或推送）`;
 }
 
 /* ----------------------------------------------------------------- upload */
@@ -365,11 +338,8 @@ async function loadNotebooks() {
   try {
     const data = await getJson('/api/notebooks');
     state.notebooks = Array.isArray(data.notebooks) ? data.notebooks : [];
-    state.due = Array.isArray(data.due) ? data.due : [];
-    state.today = data.today || state.today;
 
     $('#tab-all-count').textContent = String(state.notebooks.length);
-    renderDueBanner();
 
     if (!$('#notebook-drawer').hidden && state.drawerTab === 'all') {
       renderAllList();
@@ -383,25 +353,6 @@ async function refreshCurrentNotebook() {
   if (!state.notebook) return;
   const data = await getJson(`/api/notebooks/${state.notebook.id}`);
   setNotebook(data.notebook);
-}
-
-function renderDueBanner() {
-  const banner = $('#due-banner');
-
-  if (!state.due.length) {
-    banner.hidden = true;
-    return;
-  }
-
-  const overdue = state.due.some((item) => item.reviewDate < state.today);
-  $('#due-title').textContent = overdue
-    ? `${state.due.length} 个生词本待复习`
-    : `今天有 ${state.due.length} 个生词本要复习`;
-  $('#due-text').textContent = state.due
-    .slice(0, 3)
-    .map((item) => item.title)
-    .join(' · ');
-  banner.hidden = false;
 }
 
 function renderCurrentNotebook() {
@@ -421,10 +372,7 @@ function renderCurrentNotebook() {
 
   $('#notebook-title').value = notebook.title;
   $('#notebook-meta').textContent = `创建于 ${formatDateTime(notebook.createdAt)} · ${notebook.entries.length} 个词`;
-  $('#review-date').value = notebook.reviewDate || '';
-  $('#review-hint').textContent = reviewHint(notebook.reviewDate);
   $('#export-md').href = `/api/notebooks/${notebook.id}/export.md`;
-  $('#export-ics').href = `/api/notebooks/${notebook.id}/export.ics`;
 
   renderEntries();
 }
@@ -512,22 +460,9 @@ function renderAllList() {
 
     const meta = document.createElement('span');
     meta.className = 'nb-meta';
-    meta.textContent = summary.reviewDate
-      ? `${formatDateCn(summary.reviewDate)} · ${summary.entryCount} 词`
-      : `${summary.entryCount} 词`;
+    meta.textContent = `${summary.entryCount} 词`;
 
     header.append(title, meta);
-
-    if (
-      summary.reviewDate &&
-      summary.reviewDate <= state.today &&
-      summary.entryCount > 0
-    ) {
-      const badge = document.createElement('span');
-      badge.className = 'due-badge';
-      badge.textContent = '到期';
-      header.appendChild(badge);
-    }
 
     const panel = document.createElement('div');
     panel.className = 'nb-entries';
@@ -2367,7 +2302,6 @@ function bindEvents() {
   $('#notebook-btn').addEventListener('click', () => {
     openDrawer(state.notebook ? 'current' : 'all');
   });
-  $('#due-open').addEventListener('click', () => openDrawer('all'));
   $('#drawer-close').addEventListener('click', closeDrawer);
   $('#drawer-backdrop').addEventListener('click', closeDrawer);
 
@@ -2392,22 +2326,6 @@ function bindEvents() {
     } catch (error) {
       toast(error.message);
       $('#notebook-title').value = state.notebook.title;
-    }
-  });
-
-  $('#review-date').addEventListener('change', async () => {
-    if (!state.notebook) return;
-
-    const value = $('#review-date').value || null;
-
-    try {
-      const data = await patchNotebook({ reviewDate: value });
-      setNotebook(data.notebook);
-      await loadNotebooks();
-      toast(value ? `复习日期已设为 ${formatDateCn(value)}` : '已清除复习日期');
-    } catch (error) {
-      toast(error.message);
-      $('#review-date').value = state.notebook.reviewDate || '';
     }
   });
 
@@ -2694,8 +2612,6 @@ async function init() {
     state.demo = Boolean(config.demo);
     state.maxUploadMb = Number(config.maxUploadMb) || 12;
     state.bookContext = config.bookContext || '';
-    state.remindAt = config.remindAt || '07:30';
-    state.today = config.today || '';
 
     $('#book-context').value = readStoredContext() || state.bookContext;
 

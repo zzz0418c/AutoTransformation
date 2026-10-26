@@ -29,14 +29,6 @@
   </header>
 
   <main id="main">
-    <div id="due-banner" class="due-banner" hidden>
-      <div class="due-copy">
-        <strong id="due-title"></strong>
-        <span id="due-text"></span>
-      </div>
-      <button id="due-open" type="button" class="primary small">查看</button>
-    </div>
-
     <section id="step-upload" class="step">
       <div class="hero">
         <p class="eyebrow">BOOK PAGE → TRANSLATION</p>
@@ -281,17 +273,10 @@
         <input id="notebook-title" class="notebook-title" maxlength="120" aria-label="生词本标题">
         <p id="notebook-meta" class="notebook-meta"></p>
 
-        <div class="review-box">
-          <label for="review-date">下次复习日期</label>
-          <input id="review-date" type="date">
-          <p id="review-hint" class="review-hint"></p>
-        </div>
-
         <ul id="entry-list" class="entry-list"></ul>
 
         <div class="drawer-actions">
           <a id="export-md" class="ghost small" href="#" download>Markdown</a>
-          <a id="export-ics" class="ghost small" href="#" download>.ics 日历</a>
           <a id="export-vocab" class="ghost small" href="/api/notebooks/export/vocabcurve.txt" download>给 vocabcurve</a>
         </div>
       </div>

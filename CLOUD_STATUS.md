@@ -46,7 +46,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 首次访问 `/?token=...`：服务端写入 HttpOnly cookie，然后 303 跳转到无令牌地址
 - API 也接受 `x-access-token` 或 `Authorization: Bearer ...`
 - 无令牌：页面 401，API 401
-- 已加回归测试：`tests/auth.test.js`；目前 `npm test` 36 项全过
+- 已加回归测试：`tests/auth.test.js`；目前 `npm test` 31 项全过
 
 ## 电子书（2026-10-26 新增）
 
@@ -111,5 +111,4 @@ ssh -i C:\Users\Philip\.ssh\at_cloud root@8.138.184.0
 - 令牌如果泄露：改服务器 `.env` 的 `ACCESS_TOKEN`，重启服务，然后重新用新 token 打开一次 App。
 - 当前平板 Tailscale 已关闭，Always-on VPN 已清除；Tailscale App 还装着，但不再需要。
 - 仓库源码默认地址仍是 `127.0.0.1:8787`；平板当前安装的 App 里保存的是 Funnel 地址 + token，重装 App 后需要重新填。
-- 复习提醒的 `PUSH_URL`/systemd timer 仍未配置，需要 webhook 后再加。
 - DeepSeek Key 在服务器 `.env`，建议抽空轮换。

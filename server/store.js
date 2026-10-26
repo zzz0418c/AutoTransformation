@@ -10,7 +10,7 @@ import {
 import { join } from 'node:path';
 
 import { HttpError } from './lib/errors.js';
-import { isDateOnly, localStamp } from './lib/time.js';
+import { localStamp } from './lib/time.js';
 
 const SCHEMA_VERSION = 1;
 const FILE_NAME = 'notebooks.json';
@@ -127,9 +127,6 @@ export function createStore({ dataDir, timeZone = 'Asia/Shanghai' }) {
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
       sourceExcerpt: excerptOf(source),
-      reviewDate: null,
-      lastNotifiedFor: null,
-      notifiedAt: null,
       entries: [],
     };
 
@@ -158,18 +155,6 @@ export function createStore({ dataDir, timeZone = 'Asia/Shanghai' }) {
       const title = cleanText(patch.title, 120);
       if (!title) throw new HttpError(400, '标题不能为空。');
       notebook.title = title;
-    }
-
-    if (Object.hasOwn(patch, 'reviewDate')) {
-      const value = patch.reviewDate;
-      if (value === null || value === '') {
-        notebook.reviewDate = null;
-        notebook.lastNotifiedFor = null;
-      } else {
-        if (!isDateOnly(value)) throw new HttpError(400, '复习日期格式应为 YYYY-MM-DD。');
-        if (notebook.reviewDate !== value) notebook.lastNotifiedFor = null;
-        notebook.reviewDate = value;
-      }
     }
 
     notebook.updatedAt = now.toISOString();
@@ -218,18 +203,6 @@ export function createStore({ dataDir, timeZone = 'Asia/Shanghai' }) {
     return true;
   }
 
-  /** Mark the current reviewDate as already pushed, so it is sent once. */
-  function markNotified(id, now = new Date()) {
-    const data = read();
-    const notebook = data.notebooks.find((item) => item.id === id);
-    if (!notebook || !notebook.reviewDate) return false;
-
-    notebook.lastNotifiedFor = notebook.reviewDate;
-    notebook.notifiedAt = now.toISOString();
-    write(data);
-    return true;
-  }
-
   return {
     dataDir,
     file,
@@ -241,7 +214,6 @@ export function createStore({ dataDir, timeZone = 'Asia/Shanghai' }) {
     remove,
     addEntry,
     removeEntry,
-    markNotified,
   };
 }
 
@@ -252,8 +224,6 @@ export function summarizeNotebook(notebook) {
     createdAt: notebook.createdAt,
     updatedAt: notebook.updatedAt,
     sourceExcerpt: notebook.sourceExcerpt,
-    reviewDate: notebook.reviewDate,
-    lastNotifiedFor: notebook.lastNotifiedFor,
     entryCount: notebook.entries.length,
   };
 }

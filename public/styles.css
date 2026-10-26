@@ -774,33 +774,6 @@ textarea#source-text:focus {
   font-variant-numeric: tabular-nums;
 }
 
-.due-banner {
-  margin: 22px 0 0;
-  padding: 14px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid #e5cf9f;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #fdf6e6, #faefd6);
-}
-
-.due-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.due-copy strong {
-  font-size: 0.94rem;
-  color: #5c4113;
-}
-
-.due-copy span {
-  font-size: 0.82rem;
-  color: #7d6330;
-}
-
 .primary.small {
   padding: 8px 18px;
   font-size: 0.83rem;
@@ -944,47 +917,6 @@ body.drawer-open {
   color: var(--muted);
 }
 
-.review-box {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid #ece0c9;
-  border-radius: 12px;
-  background: #f6efe3;
-}
-
-.review-box label {
-  color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.review-box input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper-2);
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.9rem;
-  color-scheme: light;
-}
-
-.review-box input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.review-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.6;
-}
-
 .entry-list {
   list-style: none;
   margin: 18px 0 0;
@@ -1114,15 +1046,6 @@ body.drawer-open {
 .nb-meta {
   color: var(--muted);
   font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.due-badge {
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: #f7e2d8;
-  color: var(--accent-ink);
-  font-size: 0.64rem;
   white-space: nowrap;
 }
 
@@ -1263,12 +1186,6 @@ body.drawer-open {
     padding-right: 18px;
   }
 
-  .due-banner {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
   .word-card.sheet {
     left: 12px;
     right: 12px;
@@ -1319,7 +1236,6 @@ body.drawer-open {
   .word-card,
   .notebook-drawer,
   .drawer-backdrop,
-  .due-banner,
   .toast {
     display: none !important;
   }

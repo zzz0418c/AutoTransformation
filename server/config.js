@@ -46,7 +46,6 @@ export function loadConfig(env = process.env) {
 
   const demo = truthy(env.LLM_MOCK) || !textKey;
   const dataDir = text(env.DATA_DIR, 'data');
-  const remindAt = text(env.REMIND_AT, '07:30');
 
   return {
     demo,
@@ -59,9 +58,6 @@ export function loadConfig(env = process.env) {
     thinking: ['auto', 'enabled', 'disabled'].includes(thinking) ? thinking : 'auto',
     dataDir: isAbsolute(dataDir) ? dataDir : resolve(projectRoot, dataDir),
     timeZone: text(env.TIMEZONE, 'Asia/Shanghai'),
-    remindAt: /^\d{2}:\d{2}$/.test(remindAt) ? remindAt : '07:30',
-    pushUrl: text(env.PUSH_URL, ''),
-    pushFormat: text(env.PUSH_FORMAT, 'wecom').toLowerCase(),
     text: { key: textKey, baseUrl: textBaseUrl, model: textModel },
     vision: {
       key: text(env.VISION_API_KEY, textKey),

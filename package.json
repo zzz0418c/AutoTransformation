@@ -2,7 +2,7 @@
   "name": "auto-transformation",
   "version": "0.1.0",
   "private": true,
-  "description": "Upload a book page, read a paragraph-by-paragraph Chinese translation, click any word for contextual and common meanings, and keep a per-page vocabulary notebook with review reminders.",
+  "description": "Upload a book page, read a paragraph-by-paragraph Chinese translation, click any word for contextual and common meanings, and keep a per-page vocabulary notebook.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -10,7 +10,6 @@
   "scripts": {
     "start": "node server/start.js",
     "dev": "node --watch server/start.js",
-    "notify": "node scripts/notify.mjs",
     "test": "node --test"
   },
   "keywords": [
