@@ -18,10 +18,14 @@ const PNG = Buffer.from(
 );
 
 function fakeLlm() {
+  let transcribed = 0;
   return {
     demo: true,
     async transcribeImage() {
-      return 'It is a truth universally acknowledged.';
+      transcribed += 1;
+      return transcribed === 1
+        ? 'It is a truth universally acknowledged.'
+        : `A second imported page, number ${transcribed}.`;
     },
     async translateParagraphs(paragraphs) {
       return paragraphs.map((paragraph) => `译：${paragraph}`);
@@ -85,14 +89,27 @@ test('ebooks import pages serially and expose translated pages', async () => {
     assert.equal(created.body.book.pageCount, 0);
 
     for (let index = 0; index < 2; index += 1) {
+      const bytes = index === 0 ? PNG : Buffer.concat([PNG, Buffer.from([0])]);
       const form = new FormData();
-      form.append('image', new Blob([PNG], { type: 'image/png' }), `page-${index}.png`);
+      form.append('image', new Blob([bytes], { type: 'image/png' }), `page-${index}.png`);
       const uploaded = await json(
         await fetch(`${base}/api/ebooks/${bookId}/pages`, { method: 'POST', body: form }),
       );
       assert.equal(uploaded.status, 201);
       assert.equal(uploaded.body.page.status, 'pending');
     }
+
+    const duplicateForm = new FormData();
+    duplicateForm.append('image', new Blob([PNG], { type: 'image/png' }), 'duplicate.png');
+    const duplicate = await json(
+      await fetch(`${base}/api/ebooks/${bookId}/pages`, {
+        method: 'POST',
+        body: duplicateForm,
+      }),
+    );
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.duplicate, true);
+    assert.equal(duplicate.body.book.pageCount, 2);
 
     let book;
     for (let attempt = 0; attempt < 80; attempt += 1) {

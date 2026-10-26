@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -27,6 +27,24 @@ function cleanText(value, max) {
 
 function newId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${randomUUID().slice(0, 6)}`;
+}
+
+function hashBuffer(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+function normalizedText(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function storedImageHash(bookId, page) {
+  if (page.image?.sha256) return page.image.sha256;
+  if (!page.image) return '';
+  try {
+    return hashBuffer(readFileSync(join(imageRoot, bookId, `${page.id}.${page.image.ext}`)));
+  } catch {
+    return '';
+  }
 }
 
 function statusOf(pages) {
@@ -185,12 +203,26 @@ export function createEbookStore({ dataDir }) {
 
       const data = read();
       const book = requireBook(data, bookId);
+      const sha256 = hashBuffer(buffer);
+
+      for (let index = 0; index < book.pages.length; index += 1) {
+        const existing = book.pages[index];
+        if (!existing.image) continue;
+        if (storedImageHash(book.id, existing) === sha256) {
+          return {
+            duplicate: true,
+            page: pageSummary(existing, index),
+            book: summarize(book),
+          };
+        }
+      }
+
       const now = new Date().toISOString();
       const page = {
         id: newId('page'),
         status: 'pending',
         error: '',
-        image: { ext, mime, bytes: buffer.length },
+        image: { ext, mime, bytes: buffer.length, sha256 },
         sourceText: '',
         paragraphs: [],
         createdAt: now,
@@ -205,6 +237,42 @@ export function createEbookStore({ dataDir }) {
       book.updatedAt = now;
       write(data);
       return { page: pageSummary(page, book.pages.length - 1), book: summarize(book) };
+    },
+
+    deletePage(bookId, pageId) {
+      const data = read();
+      const book = requireBook(data, bookId);
+      const page = requirePage(book, pageId);
+      book.pages = book.pages.filter((item) => item.id !== pageId);
+      book.lastPage = Math.min(book.lastPage, Math.max(book.pages.length - 1, 0));
+      book.lastPart = Math.max(Number(book.lastPart) || 0, 0);
+      book.updatedAt = new Date().toISOString();
+      write(data);
+      if (page.image) {
+        try {
+          unlinkSync(join(imageRoot, book.id, `${page.id}.${page.image.ext}`));
+        } catch {
+          // A missing source image must not block cleanup.
+        }
+      }
+      return { page: pageSummary(page, 0), book: summarize(book) };
+    },
+
+    findDuplicateText(bookId, pageId, sourceText) {
+      const wanted = normalizedText(sourceText);
+      if (wanted.length < 20) return null;
+
+      const book = read().books.find((item) => item.id === bookId);
+      if (!book) return null;
+
+      for (let index = 0; index < book.pages.length; index += 1) {
+        const page = book.pages[index];
+        if (page.id === pageId) continue;
+        if (page.sourceText && normalizedText(page.sourceText) === wanted) {
+          return pageSummary(page, index);
+        }
+      }
+      return null;
     },
 
     updatePage(bookId, pageId, patch) {

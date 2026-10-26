@@ -369,6 +369,14 @@ export function createApp({
       if (!mime) throw new HttpError(415, '只支持 JPG、PNG 或 WebP 图片。');
 
       const result = ebooks.addPage(req.params.id, { buffer: req.file.buffer, mime });
+      if (result.duplicate) {
+        res.status(200).json({
+          ...result,
+          message: '这一页已经导入过，已跳过，不会重复翻译。',
+        });
+        return;
+      }
+
       ebookJobs.enqueue(req.params.id, result.page.id);
       res.status(201).json(result);
     }),

@@ -49,6 +49,15 @@ export function createEbookWorker({ store, llm, config, logger = console }) {
 
       if (!text) throw new Error('没有从图片里识别出文字。');
 
+      const duplicate = store.findDuplicateText(bookId, pageId, text);
+      if (duplicate) {
+        store.deletePage(bookId, pageId);
+        logger.info?.(
+          `[ebook] ${bookId}/${pageId}: duplicate of ${duplicate.id}, skipped translation`,
+        );
+        return;
+      }
+
       const paragraphs = splitParagraphs(text);
       if (!paragraphs.length) throw new Error('没有可翻译的段落。');
 

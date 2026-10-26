@@ -1247,6 +1247,40 @@ function looksLikeChapterStart(text) {
   );
 }
 
+function balancedEbookChunks(text, count) {
+  if (count <= 1) {
+    return [{ text: text.trim(), start: 0, end: text.length }];
+  }
+
+  const chunks = [];
+  let offset = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    let end;
+    if (index === count - 1) {
+      end = text.length;
+    } else {
+      const target = Math.round(((index + 1) / count) * text.length);
+      end = Math.max(offset + 1, Math.min(target, text.length));
+      const floor = Math.max(offset + 1, end - 180);
+      for (let cursor = end; cursor > floor; cursor -= 1) {
+        const previous = text[cursor - 1];
+        if (/\s/.test(previous) || '。！？；，.!?;'.includes(previous)) {
+          end = cursor;
+          break;
+        }
+      }
+    }
+
+    const chunk = text.slice(offset, end).trim();
+    if (chunk) chunks.push({ text: chunk, start: offset, end });
+    offset = end;
+    while (offset < text.length && /\s/.test(text[offset])) offset += 1;
+  }
+
+  return chunks;
+}
+
 function buildEbookPageViews(page) {
   if (!page) return [];
 
@@ -1271,21 +1305,37 @@ function buildEbookPageViews(page) {
     }
   }
 
-  // Avoid leaving a single orphaned word on its own page: step the type down
-  // a little and use the first size whose final chunk is substantial.
+  // If greedy filling leaves a lone word or tiny tail, rebalance the whole
+  // page into equal-sized screens instead of shrinking just the tail.
   if (chunks.length > 1) {
-    const minimumTail = Math.max(16, Math.floor(text.length * 0.04));
-    const tail = chunks[chunks.length - 1].text.length;
-    if (tail < minimumTail) {
-      const floor = Math.max(17, fontSize - 8);
-      for (let size = fontSize - 1; size >= floor; size -= 1) {
-        const candidate = paginateEbookText(text, size, width, height);
-        const candidateTail = candidate[candidate.length - 1]?.text.length || 0;
-        if (candidate.length < chunks.length || candidateTail >= minimumTail) {
-          fontSize = size;
-          chunks = candidate;
+    const minimumChunk = 30;
+    const hasTinyChunk = chunks.some(
+      (chunk, index) => index > 0 && chunk.text.length < minimumChunk,
+    );
+
+    if (hasTinyChunk) {
+      let count = chunks.length;
+      let balancedFont = fontSize;
+      let balanced = balancedEbookChunks(text, count);
+
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const tallest = Math.max(
+          ...balanced.map((chunk) => measureEbookHeight(chunk.text, balancedFont, width)),
+        );
+        if (tallest <= height * 0.98) break;
+        if (balancedFont > 12) {
+          balancedFont -= 1;
+        } else if (count < chunks.length + 4) {
+          count += 1;
+          balanced = balancedEbookChunks(text, count);
+        } else {
           break;
         }
+      }
+
+      if (balanced.length) {
+        chunks = balanced;
+        fontSize = balancedFont;
       }
     }
   }
@@ -1294,12 +1344,15 @@ function buildEbookPageViews(page) {
     ? chunks
     : [{ text: text.trim(), start: 0, end: text.length }];
 
-  return safeChunks.map((chunk) => ({
-    ...chunk,
-    pageLength: text.length,
-    fontSize,
-    lineHeight: chooseEbookLineHeight(chunk.text, fontSize, width, height),
-  }));
+  return safeChunks.map((chunk) => {
+    const chunkFontSize = chunk.fontSize ?? fontSize;
+    return {
+      ...chunk,
+      pageLength: text.length,
+      fontSize: chunkFontSize,
+      lineHeight: chooseEbookLineHeight(chunk.text, chunkFontSize, width, height),
+    };
+  });
 }
 
 function findEbookPartForProgress(views, progress) {
@@ -1644,7 +1697,7 @@ async function createEbookFromForm(event) {
     renderEbookReader();
 
     if (files.length) {
-      await importEbookFiles(book.id, files);
+      await importEbookFiles(book.id, files, { keepPage: true });
     } else {
       toast('已创建空书。回到书架，用卡片上的「＋ 书页」导入图片。');
       await showEbookLibrary();
@@ -1699,6 +1752,7 @@ async function importEbookFiles(bookId, files, { keepPage = false } = {}) {
   $('#ebook-import-detail').textContent = '按选择顺序逐页上传…';
 
   let failed = 0;
+  let duplicates = 0;
   let lastError = '';
 
   for (let index = 0; index < valid.length; index += 1) {
@@ -1716,7 +1770,11 @@ async function importEbookFiles(bookId, files, { keepPage = false } = {}) {
 
       const form = new FormData();
       form.append('image', prepared, prepared.name || `page-${index + 1}.jpg`);
-      await getJson(`/api/ebooks/${bookId}/pages`, { method: 'POST', body: form });
+      const result = await getJson(`/api/ebooks/${bookId}/pages`, {
+        method: 'POST',
+        body: form,
+      });
+      if (result.duplicate) duplicates += 1;
     } catch (error) {
       failed += 1;
       lastError = error.message;
@@ -1734,11 +1792,14 @@ async function importEbookFiles(bookId, files, { keepPage = false } = {}) {
     toast(error.message);
   }
 
+  const imported = valid.length - failed - duplicates;
+  const notes = [];
+  if (imported) notes.push(`已导入 ${imported} 页，正在逐页翻译。`);
+  if (duplicates) notes.push(`${duplicates} 页与已有书页重复，已跳过。`);
   if (failed) {
-    toast(`导入完成：${valid.length - failed} 页成功，${failed} 页失败。${lastError ? ` ${lastError}` : ''}`);
-  } else {
-    toast(`已导入 ${valid.length} 页，正在逐页翻译。`);
+    notes.push(`${failed} 页失败。${lastError ? ` ${lastError}` : ''}`);
   }
+  toast(notes.join(' ') || '没有导入新书页。');
 }
 
 async function startAddPages(bookId) {
