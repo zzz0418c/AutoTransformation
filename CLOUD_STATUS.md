@@ -54,13 +54,16 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 新建时一次选多张书页；Android 文件选择器已按 `multiple` 打开多选
 - 服务端按上传顺序逐页 OCR + 翻译，队列串行，避免并发打满模型接口
 - 书架显示封面、页数、进度；阅读器全屏只显示 OCR 英文
-- 阅读器右下角「中文 / English」按钮切换译文；左右滑动翻页；无页码、无原图、无上一页/下一页按钮
+- 阅读器不上下滚动：按屏幕高度自动放大字号，装不下的文字分到下一屏；每张新书页和 `Chapter 1` 这类篇章页都另起一屏
+- 右下角「中文 / English」切换译文，切换后保持当前书页/段落位置，不跳回页首
+- 左右滑动翻页，带 3D 书页翻转动画；无页码、无原图、无上一页/下一页按钮
+- 阅读位置记录 `lastPage + lastPart`，重新打开能回到上次的分页
 - Android 阅读模式会隐藏原生顶栏和系统栏，返回键回到书架
 - 书架卡片「＋ 书页」可继续导入；失败页在正文里直接重试；整本完成显示「已完成」
 - 数据：`data/ebooks.json`，原图：`data/ebooks/<bookId>/`
 - 实测：平板导入一张真实排版书页，OCR 与译文正确，状态 `done`
 - 平板 APK 已重装，原生顶栏有「电子书」按钮，多选文件选择器已生效
-- 测试书已删除，未触碰其他已有电子书；截图见 `docs/at-fullscreen-en.png`
+- 测试书已删除，未触碰其他已有电子书；截图见 `docs/at-final-p1.png`
 
 ## 已验证
 
@@ -69,7 +72,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - `want` 语境义：`n.（旧义/正式）需要，缺少`
 - 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
 - 无令牌访问 401，带令牌页面/API 200
-- 电子书真实书页 OCR/翻译成功；全屏英文/中文切换截图见 `docs/at-fullscreen-en.png`、`docs/at-fullscreen-zh.png`
+- 电子书真实书页 OCR/翻译成功；分页英文/中文截图见 `docs/at-final-p1.png`、`docs/at-final-zh.png`
 - 平板横屏全屏也正常；截图见 `docs/at-fullscreen-land2.png`
 
 ## 常用命令
