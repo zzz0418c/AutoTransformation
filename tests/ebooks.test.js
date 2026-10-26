@@ -42,7 +42,13 @@ async function withServer(run) {
   const config = loadConfig({ LLM_MOCK: '1', LLM_API_KEY: '' });
   const store = createStore({ dataDir, timeZone: config.timeZone });
   const ebookStore = createEbookStore({ dataDir });
-  const app = createApp({ config, llm: fakeLlm(), store, ebookStore });
+  const app = createApp({
+    config,
+    llm: fakeLlm(),
+    store,
+    ebookStore,
+    coverFinder: async () => null,
+  });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address();

@@ -877,13 +877,21 @@ function createEbookCard(book) {
   const cover = document.createElement('div');
   cover.className = 'ebook-cover';
 
-  if (book.coverPageId) {
+  const coverUrl = book.hasCover
+    ? `/api/ebooks/${encodeURIComponent(book.id)}/cover?v=${encodeURIComponent(
+        book.updatedAt || '',
+      )}`
+    : book.coverPageId
+      ? `/api/ebooks/${encodeURIComponent(book.id)}/pages/${encodeURIComponent(
+          book.coverPageId,
+        )}/image`
+      : '';
+
+  if (coverUrl) {
     const image = document.createElement('img');
     image.loading = 'lazy';
-    image.alt = '';
-    image.src = `/api/ebooks/${encodeURIComponent(book.id)}/pages/${encodeURIComponent(
-      book.coverPageId,
-    )}/image`;
+    image.alt = `${book.title || '电子书'} 封面`;
+    image.src = coverUrl;
     image.addEventListener('error', () => {
       image.remove();
       cover.prepend(createEbookFallback(book));

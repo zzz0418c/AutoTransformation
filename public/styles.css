@@ -2088,7 +2088,7 @@ html:has(body.ebook-reading) {
   width: min(900px, 86vw);
   height: 100%;
   margin: 0 auto;
-  padding: 7vh 0 13vh;
+  padding: 6vh 0 max(5vh, 76px);
   color: var(--ink-soft);
   font-family: var(--serif);
   font-size: clamp(1.3rem, 2vw, 1.78rem);
@@ -2277,8 +2277,8 @@ html:has(body.ebook-reading) {
 @media (max-width: 900px) {
   .ebook-read-text {
     width: min(88vw, 680px);
-    padding-top: 6vh;
-    padding-bottom: 12vh;
+    padding-top: 5vh;
+    padding-bottom: max(5vh, 68px);
     font-size: clamp(1.2rem, 3.6vw, 1.55rem);
     line-height: 1.95;
   }
@@ -2292,6 +2292,6 @@ html:has(body.ebook-reading) {
 @media (max-width: 560px) {
   .ebook-read-text {
     width: 88vw;
-    padding-bottom: 14vh;
+    padding-bottom: max(5vh, 72px);
   }
 }

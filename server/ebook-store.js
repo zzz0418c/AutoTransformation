@@ -14,7 +14,12 @@ import { HttpError } from './lib/errors.js';
 
 const SCHEMA_VERSION = 1;
 const FILE_NAME = 'ebooks.json';
-const IMAGE_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const IMAGE_EXT = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+};
 
 function cleanText(value, max) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -52,6 +57,7 @@ function summarize(book) {
     progress: pages.length ? Math.round((doneCount / pages.length) * 100) : 0,
     status: statusOf(pages),
     coverPageId: cover?.id ?? null,
+    hasCover: Boolean(book.cover),
     lastPage: Math.min(Math.max(Number(book.lastPage) || 0, 0), Math.max(pages.length - 1, 0)),
     lastPart: Math.max(Number(book.lastPart) || 0, 0),
     createdAt: book.createdAt,
@@ -165,6 +171,7 @@ export function createEbookStore({ dataDir }) {
         updatedAt: now,
         lastPage: 0,
         lastPart: 0,
+        cover: null,
         pages: [],
       };
       data.books.unshift(book);
@@ -236,6 +243,47 @@ export function createEbookStore({ dataDir }) {
       data.books = data.books.filter((item) => item.id !== bookId);
       write(data);
       rmSync(join(imageRoot, book.id), { recursive: true, force: true });
+    },
+
+    setCover(bookId, { buffer, mime, ext, source = '' }) {
+      const data = read();
+      const book = requireBook(data, bookId);
+      const extension = ext || IMAGE_EXT[mime];
+      if (!extension || !buffer?.length) {
+        throw new HttpError(500, '封面图片无效。', 'cover_invalid');
+      }
+
+      const dir = join(imageRoot, book.id);
+      mkdirSync(dir, { recursive: true });
+      if (book.cover?.ext && book.cover.ext !== extension) {
+        try {
+          unlinkSync(join(dir, `cover.${book.cover.ext}`));
+        } catch {
+          // ignore a missing old cover
+        }
+      }
+
+      writeFileSync(join(dir, `cover.${extension}`), buffer);
+      book.cover = {
+        ext: extension,
+        mime,
+        bytes: buffer.length,
+        source,
+        updatedAt: new Date().toISOString(),
+      };
+      book.updatedAt = new Date().toISOString();
+      write(data);
+      return publicBook(book);
+    },
+
+    readCover(bookId) {
+      const data = read();
+      const book = requireBook(data, bookId);
+      if (!book.cover) throw new HttpError(404, '这本电子书还没有封面。', 'not_found');
+      return {
+        buffer: readFileSync(join(imageRoot, book.id, `cover.${book.cover.ext}`)),
+        mime: book.cover.mime,
+      };
     },
 
     readImage(bookId, pageId) {

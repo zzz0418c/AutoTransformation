@@ -8,6 +8,7 @@ import { HttpError, LlmError } from './lib/errors.js';
 import { isDateOnly, todayInZone } from './lib/time.js';
 import { normalizeText, splitParagraphs } from './lib/text.js';
 import { buildIcs } from './ics.js';
+import { findBookCover } from './book-cover.js';
 import { createEbookStore } from './ebook-store.js';
 import { createEbookWorker } from './ebook-worker.js';
 import { dueNotebooks } from './reminders.js';
@@ -116,7 +117,15 @@ function sendDownload(res, filename, contentType, body) {
   res.send(body);
 }
 
-export function createApp({ config, llm, store, ebookStore, ebookWorker, publicDir = defaultPublicDir }) {
+export function createApp({
+  config,
+  llm,
+  store,
+  ebookStore,
+  ebookWorker,
+  coverFinder = findBookCover,
+  publicDir = defaultPublicDir,
+}) {
   const app = express();
   const notebooks =
     store ?? createStore({ dataDir: config.dataDir, timeZone: config.timeZone });
@@ -285,10 +294,44 @@ export function createApp({ config, llm, store, ebookStore, ebookWorker, publicD
       const title = readString(req.body?.title, '书名', { required: false, max: 120 });
       const author = readString(req.body?.author, '作者', { required: false, max: 120 });
       const context = readString(req.body?.context, '书籍背景', { required: false, max: 200 });
-      const book = ebooks.create({ title, author, context });
+      let book = ebooks.create({ title, author, context });
+
+      if (title) {
+        try {
+          const cover = await coverFinder({ title, author });
+          if (cover) book = ebooks.setCover(book.id, cover);
+        } catch {
+          // A missing cover must never block creating the book.
+        }
+      }
+
       res.status(201).json({ book });
     }),
   );
+
+  app.post(
+    '/api/ebooks/:id/cover',
+    asyncHandler(async (req, res) => {
+      const existing = ebooks.get(req.params.id);
+      if (!existing) throw new HttpError(404, '电子书不存在。', 'not_found');
+
+      const cover = await coverFinder({ title: existing.title, author: existing.author });
+      const book = cover ? ebooks.setCover(existing.id, cover) : existing;
+      res.json({ book });
+    }),
+  );
+
+  app.get('/api/ebooks/:id/cover', (req, res, next) => {
+    try {
+      const image = ebooks.readCover(req.params.id);
+      res
+        .type(image.mime)
+        .set('Cache-Control', 'private, max-age=31536000, immutable')
+        .send(image.buffer);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get('/api/ebooks/:id/pages/:pageId/image', (req, res, next) => {
     try {
