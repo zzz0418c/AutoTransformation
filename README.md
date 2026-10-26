@@ -42,7 +42,9 @@
 
 ![电子书封面](docs/at-cover-final.png)
 
-![电子书分页阅读](docs/at-spacing.png)
+![电子书连续分页阅读](docs/at-flow-reader2.png)
+
+![页面管理](docs/at-page-manager.png)
 
 ## 第一次使用：你要做的
 

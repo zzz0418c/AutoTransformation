@@ -70,7 +70,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - 数据：`data/ebooks.json`，原图：`data/ebooks/<bookId>/`
 - 实测：平板导入一张真实排版书页，OCR 与译文正确，状态 `done`
 - 平板 APK 已重装，原生顶栏有「电子书」按钮，多选文件选择器已生效
-- 测试书已删除，未触碰其他已有电子书；封面截图见 `docs/at-cover-final.png`，阅读截图见 `docs/at-spacing.png`
+- 测试书已删除，未触碰其他已有电子书；封面截图见 `docs/at-cover-final.png`，阅读截图见 `docs/at-flow-reader2.png`，页面管理见 `docs/at-page-manager.png`
 
 ## 已验证
 
@@ -79,7 +79,7 @@ C:\Users\Philip\Documents\AutoTransformation\.cloud-access
 - `want` 语境义：`n.（旧义/正式）需要，缺少`
 - 生词本自动新增 1 条，截图见 `docs/at-funnel-final.png`
 - 无令牌访问 401，带令牌页面/API 200
-- 电子书真实书页 OCR/翻译成功；封面匹配与分页阅读截图见 `docs/at-cover-final.png`、`docs/at-spacing.png`
+- 电子书真实书页 OCR/翻译成功；封面、连续分页与页面管理截图见 `docs/at-cover-final.png`、`docs/at-flow-reader2.png`、`docs/at-page-manager.png`
 - 封面源测试：Douban 成功，未知书名会生成 SVG 备用封面
 
 ## 常用命令
