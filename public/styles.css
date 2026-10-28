@@ -549,6 +549,10 @@ textarea#source-text:focus {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+.ebook-word.ebook-bold {
+  font-weight: 600;
+}
+
 .read-hint {
   margin: 26px 0 0;
   padding-top: 18px;
@@ -2054,6 +2058,8 @@ html:has(body.ebook-reading) {
   letter-spacing: 0.001em;
   overflow-wrap: break-word;
   hyphens: auto;
+  text-align: justify;
+  text-justify: inter-word;
 }
 
 .ebook-measure p {

@@ -1087,21 +1087,52 @@ async function openEbook(bookId, pageIndex = null) {
   }
 }
 
+function cleanEbookText(value) {
+  return String(value || '')
+    .replace(/\\\*/g, '')
+    .replace(/\*+/g, '')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+}
+
+function boldTermsFromMarkup(value) {
+  const terms = new Set();
+  const pattern = /\*\*([\s\S]+?)\*\*|__([\s\S]+?)__/g;
+
+  for (const match of String(value || '').matchAll(pattern)) {
+    const content = match[1] || match[2] || '';
+    for (const token of tokenize(content)) {
+      if (token.type !== 'word') continue;
+      const word = token.value.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, '');
+      if (word) terms.add(word);
+    }
+  }
+  return [...terms];
+}
+
 function ebookPageParagraphs(page) {
   if (Array.isArray(page?.paragraphs) && page.paragraphs.length) {
     return page.paragraphs
-      .map((item) => ({
-        source: String(item.source || '').trim(),
-        translation: String(item.translation || '').trim(),
-      }))
+      .map((item) => {
+        const rawSource = String(item.source || '');
+        const rawTranslation = String(item.translation || '');
+        return {
+          source: cleanEbookText(rawSource),
+          translation: cleanEbookText(rawTranslation),
+          sourceBold: boldTermsFromMarkup(rawSource),
+        };
+      })
       .filter((item) => item.source || item.translation);
   }
 
   return String(page?.sourceText || '')
     .split(/\n{2,}/)
-    .map((text) => text.trim())
-    .filter(Boolean)
-    .map((source) => ({ source, translation: '' }));
+    .map((raw) => ({
+      source: cleanEbookText(raw),
+      translation: '',
+      sourceBold: boldTermsFromMarkup(raw),
+    }))
+    .filter((item) => item.source);
 }
 
 function appendEbookParagraph(container, text, className = '') {
@@ -1303,7 +1334,13 @@ function buildEbookViewsForText(text) {
   const { width, height } = getEbookReadingBox();
   const fontSize = ebookReaderFontSize(width);
   const lineHeight = 1.85;
-  let chunks = paginateEbookText(text, fontSize, width, height);
+  // Keep one line of safety margin: browsers can round justified text a few
+  // pixels taller than the offscreen measuring copy.
+  const usableHeight = Math.max(
+    120,
+    height - fontSize * lineHeight * 0.9,
+  );
+  let chunks = paginateEbookText(text, fontSize, width, usableHeight);
 
   // Fold a tiny tail into the previous page. If the combined text still does
   // not fit, split just those two pages evenly instead of shrinking every page.
@@ -1318,7 +1355,7 @@ function buildEbookViewsForText(text) {
     const right = chunks[tinyIndex];
     const mergedText = `${left.text} ${right.text}`.trim();
 
-    if (measureEbookHeight(mergedText, fontSize, width) <= height) {
+    if (measureEbookHeight(mergedText, fontSize, width) <= usableHeight) {
       left.text = mergedText;
       left.end = right.end;
       chunks.splice(tinyIndex, 1);
@@ -1331,7 +1368,7 @@ function buildEbookViewsForText(text) {
     const tallest = Math.max(
       ...pair.map((chunk) => measureEbookHeight(chunk.text, fontSize, width)),
     );
-    if (tallest > height) break;
+    if (tallest > usableHeight) break;
 
     pair[0].start = left.start;
     pair[0].end = left.start + pair[0].text.length;
@@ -1411,6 +1448,7 @@ function buildEbookSegmentViews(startPage) {
         pageIndex: index,
         source,
         translation: String(paragraph.translation || '').trim(),
+        sourceBold: paragraph.sourceBold || [],
         start,
         end: combined.length,
       });
@@ -1439,12 +1477,19 @@ function buildEbookSegmentViews(startPage) {
         chosen[0].start === view.start &&
         looksLikeChapterStart(chosen[0].source),
     );
+    const boldSource = [
+      ...new Set(chosen.flatMap((paragraph) => paragraph.sourceBold || [])),
+    ];
 
     let translationFontSize = view.fontSize;
     if (translation) {
+      const translationHeight = Math.max(
+        120,
+        height - view.fontSize * (view.lineHeight || 1.85) * 0.9,
+      );
       while (
         translationFontSize > 11 &&
-        measureEbookHeight(translation, translationFontSize, width) > height
+        measureEbookHeight(translation, translationFontSize, width) > translationHeight
       ) {
         translationFontSize -= 1;
       }
@@ -1457,6 +1502,7 @@ function buildEbookSegmentViews(startPage) {
       translation,
       translationFontSize,
       chapter,
+      boldSource,
     };
   });
 
@@ -1596,6 +1642,7 @@ function renderEbookReader() {
       : view.fontSize
   }px`;
   container.style.lineHeight = String(view.lineHeight || 1.85);
+  const boldWords = new Set(view.boldSource || []);
   let paragraphIndex = 0;
   for (const paragraph of displayText.split(/\n{2,}/)) {
     const text = paragraph.trim();
@@ -1614,6 +1661,12 @@ function renderEbookReader() {
         }
         const word = document.createElement('span');
         word.className = 'w ebook-word';
+        const normalizedWord = token.value
+          .toLowerCase()
+          .replace(/^[^a-z]+|[^a-z]+$/g, '');
+        if (boldWords.has(normalizedWord)) {
+          word.classList.add('ebook-bold');
+        }
         word.textContent = token.value;
         word.dataset.start = String(token.start);
         word.dataset.end = String(token.end);
@@ -1621,6 +1674,17 @@ function renderEbookReader() {
       }
     }
     paragraphIndex += 1;
+  }
+
+  // Defensive fit: if the browser lays the justified page out a little taller
+  // than the measuring copy, reduce this page's type until nothing is clipped.
+  let fittedSize = Number.parseFloat(container.style.fontSize) || view.fontSize;
+  while (
+    fittedSize > 12 &&
+    container.scrollHeight > container.clientHeight + 1
+  ) {
+    fittedSize -= 1;
+    container.style.fontSize = `${fittedSize}px`;
   }
 
   if (surface) surface.scrollTop = 0;
