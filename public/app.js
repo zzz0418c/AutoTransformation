@@ -1198,21 +1198,32 @@ function paginateEbookText(text, fontSize, width, height) {
     if (best <= offset) best = Math.min(text.length, offset + 1);
 
     let end = best;
-    const slice = text.slice(offset, end);
 
-    const paragraphBreak = slice.lastIndexOf('\n\n');
-    if (paragraphBreak > slice.length * 0.6) {
-      end = offset + paragraphBreak;
-    } else {
+    // Only step back a little to a word/paragraph boundary. The old 60% rule
+    // could jump back a whole paragraph and leave a page almost empty just
+    // because the next paragraph did not quite fit.
+    if (best < text.length) {
+      const slice = text.slice(offset, best);
+      const windowSize = Math.min(
+        220,
+        Math.max(60, Math.floor(slice.length * 0.25)),
+      );
+      const floor = Math.max(0, slice.length - windowSize);
+
+      const paragraphBreak = slice.lastIndexOf('\n\n');
       const whitespace = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\n'));
-      if (whitespace > slice.length * 0.6) {
+      let punctuation = -1;
+      for (const mark of '。！？；，.!?;') {
+        punctuation = Math.max(punctuation, slice.lastIndexOf(mark));
+      }
+      if (punctuation >= 0) punctuation += 1;
+
+      if (paragraphBreak >= floor) {
+        end = offset + paragraphBreak;
+      } else if (whitespace >= floor) {
         end = offset + whitespace;
-      } else {
-        let punctuation = -1;
-        for (const mark of '。！？；，.!?;') {
-          punctuation = Math.max(punctuation, slice.lastIndexOf(mark));
-        }
-        if (punctuation > slice.length * 0.6) end = offset + punctuation + 1;
+      } else if (punctuation >= floor) {
+        end = offset + punctuation;
       }
     }
 
